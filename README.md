@@ -76,29 +76,8 @@ Hammerspoon handles the global hotkey and the 🍋 indicator.
 
 1. Open Hammerspoon (`/Applications/Hammerspoon.app`)
 2. Click the menu bar icon > **Open Config**
-3. Replace the content of your `init.lua` file with:
-
-   ```lua
-   transcriptionMenu = hs.menubar.new()
-
-   hs.hotkey.bind({"ctrl"}, "Y", function()
-     transcriptionMenu:setTitle("🍋")
-     local transcriptionTask = hs.task.new(
-       "/bin/zsh",
-       function(exitCode, stdOut, stdErr)
-         transcriptionMenu:setTitle("")
-       end,
-       {
-         "-c",
-         "/full/path/to/lemon-whisper/.venv/bin/python /full/path/to/lemon-whisper/local-transcription.py"
-       }
-     )
-     transcriptionTask:start()
-   end)
-   ```
-
+3. Add the code from the `init.lua` file in this repository to your `init.lua` file.
    > **Important:** Replace `/full/path/to/lemon-whisper` with the absolute path to your Lemon Whisper folder.
-
 4. Save the file.
 5. In the Hammerspoon menu, click **Reload Config**.
 
@@ -106,7 +85,7 @@ Hammerspoon handles the global hotkey and the 🍋 indicator.
 
 1. Place your cursor where you want the transcribed text to appear.
 2. Press `Ctrl + Y` to start recording.
-3. Speak clearly. While the 🍋 icon is visible in the menu bar, transcription is in progress.
+3. Speak clearly. While the 📝 icon is visible in the menu bar, transcription is in progress.
 4. Press `Ctrl` again to stop recording.
 5. The transcribed text will be automatically copied and pasted.
 
@@ -119,25 +98,6 @@ Hammerspoon handles the global hotkey and the 🍋 indicator.
 
 You can adjust transcription settings by editing `local-transcription.py`.
 
-**Defaults:**
-
-- Language: `en`
-- Beam size: `5`
-- VAD threshold: `0.6`
-
-If you prefer auto language detection, change:
-
-```python
-"--language",
-"en",
-```
-
-to:
-
-```python
-"--language",
-"auto",
-```
 
 ## ❤️ Contributing
 

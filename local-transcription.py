@@ -44,6 +44,14 @@ def on_key_press(key):
 def main():
     global recording, recording_data
 
+    # Parse command line arguments
+    language = "auto"
+    for arg in sys.argv[1:]:
+        if arg.startswith("--lang="):
+            language = arg.split("=", 1)[1]
+
+    print(f"Using language: {language}")
+
     print("Recording started. Press Ctrl to stop and transcribe.")
     recording = True
     recording_data = []
@@ -106,7 +114,7 @@ def main():
                 "--file",
                 filename,
                 "--language",
-                "en",
+                language,
                 "--beam-size",
                 "5",
                 "--no-timestamps",
@@ -122,22 +130,6 @@ def main():
         )
         text = result.stdout.strip()
         print(f"Transcribed text: {text}")
-        # Debugging
-        # Read the generated .json file
-        json_file = filename + ".json"
-        if os.path.exists(json_file):
-            with open(json_file, "r") as f:
-                data = json.load(f)
-            os.remove(json_file)
-            scores = []
-            for transcription in data.get("transcription", []):
-                scores += [t["p"] for t in transcription.get("tokens", []) if "p" in t]
-            if scores:
-                mean_conf = sum(scores) / len(scores)
-                print(f"Mean confidence: {mean_conf:.2f}")
-                # text += f" {mean_conf:.2f}"
-        # Debugging finished
-
         pyperclip.copy(text)
         print("Text copied to clipboard.")
         if text:
