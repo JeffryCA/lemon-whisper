@@ -117,7 +117,6 @@ def main():
                 "--beam-size",
                 "5",
                 "--no-timestamps",
-                "--output-json-full",
                 "--vad",
                 "--vad-model",
                 VAD_MODEL_PATH,
