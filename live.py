@@ -400,7 +400,7 @@ def main():
         if arg.startswith("--lang="):
             language = arg.split("=", 1)[1]
         elif arg == "--help" or arg == "-h":
-            print("Usage: python local-transcription.py [OPTIONS]")
+            print("Usage: python live.py [OPTIONS]")
             print("Options:")
             print("  --lang=LANGUAGE       Set transcription language (default: auto)")
             print("  --help, -h           Show this help message")
