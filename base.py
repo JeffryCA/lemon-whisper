@@ -43,6 +43,9 @@ def on_key_press(key):
 def main():
     global recording, recording_data
 
+    # Ensure the temp directory exists before we try to write files
+    os.makedirs(TEMP_DIR, exist_ok=True)
+
     # Parse command line arguments
     language = "auto"
     for arg in sys.argv[1:]:
