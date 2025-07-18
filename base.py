@@ -59,9 +59,9 @@ def main():
     recording_data = []
     sample_rate = 16000
 
-    # Start Escape key listener in a background thread
-    esc_thread = pynput_keyboard.Listener(on_press=on_key_press)
-    esc_thread.start()
+    # Start exit-key listener (Ctrl by default) in a background thread
+    exit_thread = pynput_keyboard.Listener(on_press=on_key_press)
+    exit_thread.start()
 
     # Start audio stream in main thread
     global audio_stream
