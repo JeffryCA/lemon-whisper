@@ -6,6 +6,7 @@ import tempfile
 import numpy as np
 import pyperclip
 import sounddevice as sd
+import soundfile as sf
 from dotenv import load_dotenv
 from pynput import keyboard as pynput_keyboard
 from pynput.keyboard import Key
@@ -23,13 +24,17 @@ TEMP_DIR = os.path.join(BASE_DIR, "temp")
 
 # === STATE ===
 recording = False
-recording_data = []
 audio_stream = None
+audio_file = None
+temp_filename = None
+sample_count = 0
 
 
 def audio_callback(indata, frames, time, status):
-    if recording:
-        recording_data.append(indata.copy())
+    global sample_count
+    if recording and audio_file is not None:
+        audio_file.write(indata)
+        sample_count += len(indata)
 
 
 def on_key_press(key):
@@ -41,7 +46,7 @@ def on_key_press(key):
 
 
 def main():
-    global recording, recording_data
+    global recording, audio_file, temp_filename, sample_count
 
     # Ensure the temp directory exists before we try to write files
     os.makedirs(TEMP_DIR, exist_ok=True)
@@ -56,8 +61,19 @@ def main():
 
     print("Recording started. Press Ctrl to stop and transcribe.")
     recording = True
-    recording_data = []
     sample_rate = 16000
+    sample_count = 0
+
+    # Create temporary file for streaming audio
+    fd, temp_filename = tempfile.mkstemp(suffix=".wav", dir=TEMP_DIR)
+    os.close(fd)
+    audio_file = sf.SoundFile(
+        temp_filename,
+        mode="w",
+        samplerate=sample_rate,
+        channels=1,
+        subtype="PCM_16",
+    )
 
     # Start exit-key listener (Ctrl by default) in a background thread
     exit_thread = pynput_keyboard.Listener(on_press=on_key_press)
@@ -87,24 +103,21 @@ def main():
         audio_stream.close()
         audio_stream = None
 
+    # Close audio file to flush data
+    if audio_file:
+        audio_file.close()
+
     # Process the recording
-    if recording_data:
-        # Save to temp WAV
-        audio = np.concatenate(recording_data, axis=0)
-        duration_sec = audio.shape[0] / sample_rate
+    if sample_count > 0:
+        filename = temp_filename
+        duration_sec = sample_count / sample_rate
         print(
-            f"[DEBUG] stop_recording: concatenated audio shape: {audio.shape}, duration: {duration_sec:.2f}s"
+            f"[DEBUG] stop_recording: recorded samples: {sample_count}, duration: {duration_sec:.2f}s"
         )
         if duration_sec < 0.5:
             print("[INFO] Audio too short (<0.5s), skipping transcription.")
+            os.remove(filename)
             sys.exit(0)
-        with tempfile.NamedTemporaryFile(
-            delete=False, suffix=".wav", dir=TEMP_DIR
-        ) as tmpfile:
-            filename = tmpfile.name
-            import soundfile as sf
-
-            sf.write(filename, audio, sample_rate)
 
         # Transcribe
         print("Transcribing...")
@@ -148,6 +161,8 @@ def main():
         sys.exit(0)
     else:
         print("[ERROR] No audio was captured. Nothing to transcribe.")
+        if temp_filename and os.path.exists(temp_filename):
+            os.remove(temp_filename)
         sys.exit(1)
 
 
