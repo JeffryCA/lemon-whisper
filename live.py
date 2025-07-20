@@ -258,25 +258,16 @@ def transcription_worker():
     """Background thread for handling transcription"""
     logging.info("🔧 Transcription worker started")
     while True:
-        try:
-            audio_data = transcription_queue.get(timeout=1.0)
-            if audio_data is not None:
-                # logging.info("🎯 Transcription worker processing audio data")
-                _transcribe_audio(audio_data)
+        audio_data = transcription_queue.get()
+        if audio_data is None:
             transcription_queue.task_done()
-        except queue.Empty:
-            # Only exit if recording is stopped AND finalization is done AND queue is empty
-            if not recording and finalizing and transcription_queue.empty():
-                logging.info(
-                    "⏰ Transcription worker timeout - recording stopped and queue empty"
-                )
-                break
-            else:
-                # logging.info("⏰ Transcription worker timeout - checking if recording stopped")
-                continue
+            break
+        try:
+            _transcribe_audio(audio_data)
         except Exception as e:
             logging.error(f"❌ Transcription error: {e}")
-            transcription_queue.task_done()  # Mark task as done even on error
+        finally:
+            transcription_queue.task_done()
     logging.info("🏁 Transcription worker finished")
 
 
@@ -498,11 +489,16 @@ def main():
         # Always wait for the queue to be fully processed to avoid race conditions.
         # .join() will block until all items that have been put() are task_done().
         logging.info("⏳ Finishing all remaining transcriptions...")
+        transcription_queue.put(None)
         transcription_queue.join()
         logging.info("✅ All transcriptions finished.")
 
         # Finalization complete
         finalizing = False
+        if audio_stream:
+            audio_stream.stop()
+            audio_stream.close()
+            logging.info("🔇 Audio stream closed.")
 
         # Stop key listener after finalization
         key_listener.stop()
