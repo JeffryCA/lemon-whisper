@@ -20,7 +20,7 @@ load_dotenv()
 # === CONFIGURATION ===
 BASE_DIR = os.path.dirname(os.path.realpath(__file__))
 WHISPER_CPP_PATH = os.environ.get("WHISPER_CPP_PATH")
-MODEL_PATH = os.path.join(WHISPER_CPP_PATH, "models", "ggml-large-v3-q5_0.bin")
+MODEL_PATH = os.path.join(WHISPER_CPP_PATH, "models", "ggml-large-v3-turbo.bin")
 VAD_MODEL_PATH = os.path.join(WHISPER_CPP_PATH, "models", "ggml-silero-v5.1.2.bin")
 WHISPER_CLI = os.path.join(WHISPER_CPP_PATH, "build", "bin", "whisper-cli")
 TEMP_DIR = os.path.join(BASE_DIR, "temp")
@@ -314,13 +314,25 @@ def _transcribe_audio(audio_data):
             "--language",
             language,
             "--beam-size",
-            "5",
+            "1",
             "--no-timestamps",
             "--vad",
             "--vad-model",
             VAD_MODEL_PATH,
             "--vad-threshold",
             str(VAD_THRESHOLD),
+            "--max-context",
+            "1024",
+            "--max-len",
+            "500",
+            "--audio-ctx",
+            "1000",
+            "--split-on-word",
+            "--threads",
+            "2",
+            "--no-fallback",
+            "--temperature",
+            "0.0",
         ]
 
         # Add context from previously transcribed text if available
