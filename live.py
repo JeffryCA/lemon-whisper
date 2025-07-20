@@ -48,11 +48,25 @@ audio_processor = None  # Will be initialized in main if needed
 
 
 class AudioProcessor:
-    def __init__(self):
+    def __init__(self, load_vad: bool = True):
+        """Initialize the audio processor.
+
+        Parameters
+        ----------
+        load_vad : bool, optional
+            Whether to load the Silero VAD model immediately. Set to ``False``
+            to defer loading until later, allowing recording to start
+            without delay.
+        """
         self.vad_model = None
         self.vad_utils = None
-        self._init_vad()
+        if load_vad:
+            self._init_vad()
         self.reset()
+
+    def load_vad_async(self):
+        """Load the Silero VAD model in a background thread."""
+        threading.Thread(target=self._init_vad, daemon=True).start()
 
     def _init_vad(self):
         """Initialize Silero VAD model"""
@@ -406,8 +420,8 @@ def main():
             print("  --help, -h           Show this help message")
             return
 
-    # Initialize audio processor
-    audio_processor = AudioProcessor()
+    # Initialize audio processor without loading VAD to avoid startup delay
+    audio_processor = AudioProcessor(load_vad=False)
     print(f"🌍 Using language: {language}")
 
     # Reset state
@@ -417,15 +431,11 @@ def main():
     detected_language = None  # Reset detected language for new session
     audio_processor.reset()
 
-    # Start transcription worker thread
-    transcription_thread = threading.Thread(target=transcription_worker, daemon=True)
-    transcription_thread.start()
-
-    # Start key listener in background thread
+    # Prepare background helpers
     key_listener = pynput_keyboard.Listener(on_press=on_key_press)
-    key_listener.start()
+    transcription_thread = threading.Thread(target=transcription_worker, daemon=True)
 
-    # Start audio stream
+    # Start audio stream as early as possible
     try:
         audio_stream = sd.InputStream(
             samplerate=SAMPLE_RATE,
@@ -437,6 +447,13 @@ def main():
         audio_stream.start()
 
         print("🔴 Recording started...")
+
+        # Start key listener and transcription worker
+        key_listener.start()
+        transcription_thread.start()
+
+        # Load VAD model asynchronously so we don't miss early audio
+        audio_processor.load_vad_async()
 
         # Keep main thread alive
         while recording:
