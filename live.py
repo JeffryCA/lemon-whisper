@@ -1,3 +1,4 @@
+import logging
 import os
 import queue
 import subprocess
@@ -14,6 +15,8 @@ import torch
 from dotenv import load_dotenv
 from pynput import keyboard as pynput_keyboard
 from pynput.keyboard import Key
+
+from logger_config import setup_logging
 
 load_dotenv()
 
@@ -91,11 +94,11 @@ class AudioProcessor:
             ) = self.vad_utils
             self.get_speech_timestamps = get_speech_timestamps
 
-            print("✅ Silero VAD model loaded successfully")
+            logging.info("✅ Silero VAD model loaded successfully")
 
         except Exception as e:
-            print(f"⚠️  Failed to load Silero VAD: {e}")
-            print("📦 Install with: pip install torch torchaudio")
+            logging.warning(f"⚠️  Failed to load Silero VAD: {e}")
+            logging.info("📦 Install with: pip install torch torchaudio")
             self.vad_model = None
 
     def reset(self):
@@ -131,11 +134,11 @@ class AudioProcessor:
             last_speech_time = current_time
             self.speech_detected = True
             self.silence_start = None
-            # print("🎤 Speech detected")
+            # logging.info("🎤 Speech detected")
         else:
             if self.speech_detected and self.silence_start is None:
                 self.silence_start = current_time
-                # print("🔇 Silence started")
+                # logging.info("🔇 Silence started")
 
         # Check for pause (silence after speech)
         if (
@@ -145,7 +148,9 @@ class AudioProcessor:
             and len(self.audio_buffer) > 0
         ):
 
-            print(f"⏸️  Pause detected ({PAUSE_THRESHOLD}s), triggering transcription")
+            logging.info(
+                f"⏸️  Pause detected ({PAUSE_THRESHOLD}s), triggering transcription"
+            )
             self._trigger_transcription()
 
     def _apply_vad(self, chunk):
@@ -189,7 +194,7 @@ class AudioProcessor:
             return has_speech
 
         except Exception as e:
-            print(f"⚠️  VAD error, falling back to energy detection: {e}")
+            logging.warning(f"⚠️  VAD error, falling back to energy detection: {e}")
             # Fallback to energy-based VAD
             energy = np.sqrt(np.mean(chunk.astype(np.float32) ** 2))
             return energy > 0.01
@@ -197,12 +202,12 @@ class AudioProcessor:
     def _trigger_transcription(self):
         """Trigger transcription for current buffer"""
         if not speech_detected_in_session:
-            print("🚫 No speech detected in session, discarding audio")
+            logging.info("🚫 No speech detected in session, discarding audio")
             self.reset()
             return
 
         if len(self.audio_buffer) == 0:
-            print("🚫 No audio to transcribe")
+            logging.info("🚫 No audio to transcribe")
             return
 
         # Prepare audio for transcription
@@ -210,11 +215,11 @@ class AudioProcessor:
         duration = len(audio_array) / SAMPLE_RATE
 
         if duration < 0.5:
-            print(f"🚫 Audio too short ({duration:.2f}s), discarding")
+            logging.info(f"🚫 Audio too short ({duration:.2f}s), discarding")
             self.reset()
             return
 
-        print(f"📝 Queuing audio for transcription ({duration:.2f}s)")
+        logging.info(f"📝 Queuing audio for transcription ({duration:.2f}s)")
         transcription_queue.put(audio_array.copy())
 
         # Reset for next chunk
@@ -223,22 +228,24 @@ class AudioProcessor:
     def finalize(self):
         """Process any remaining audio when recording stops"""
         if len(self.audio_buffer) > 0 and speech_detected_in_session:
-            print("📝 Processing final audio chunk")
+            logging.info("📝 Processing final audio chunk")
 
             # Prepare audio for transcription
             audio_array = np.array(self.audio_buffer, dtype=np.int16)
             duration = len(audio_array) / SAMPLE_RATE
 
             if duration >= 0.5:
-                print(f"📝 Queuing final audio for transcription ({duration:.2f}s)")
+                logging.info(
+                    f"📝 Queuing final audio for transcription ({duration:.2f}s)"
+                )
                 transcription_queue.put(audio_array.copy())
             else:
-                print(f"🚫 Final audio too short ({duration:.2f}s), discarding")
+                logging.info(f"🚫 Final audio too short ({duration:.2f}s), discarding")
         else:
             if len(self.audio_buffer) == 0:
-                print("🚫 No audio recorded")
+                logging.info("🚫 No audio recorded")
             elif not speech_detected_in_session:
-                print("🚫 No speech detected in session")
+                logging.info("🚫 No speech detected in session")
 
 
 def audio_callback(indata, frames, time, status):
@@ -249,28 +256,28 @@ def audio_callback(indata, frames, time, status):
 
 def transcription_worker():
     """Background thread for handling transcription"""
-    print("🔧 Transcription worker started")
+    logging.info("🔧 Transcription worker started")
     while True:
         try:
             audio_data = transcription_queue.get(timeout=1.0)
             if audio_data is not None:
-                # print("🎯 Transcription worker processing audio data")
+                # logging.info("🎯 Transcription worker processing audio data")
                 _transcribe_audio(audio_data)
             transcription_queue.task_done()
         except queue.Empty:
             # Only exit if recording is stopped AND finalization is done AND queue is empty
             if not recording and finalizing and transcription_queue.empty():
-                print(
+                logging.info(
                     "⏰ Transcription worker timeout - recording stopped and queue empty"
                 )
                 break
             else:
-                # print("⏰ Transcription worker timeout - checking if recording stopped")
+                # logging.info("⏰ Transcription worker timeout - checking if recording stopped")
                 continue
         except Exception as e:
-            print(f"❌ Transcription error: {e}")
+            logging.error(f"❌ Transcription error: {e}")
             transcription_queue.task_done()  # Mark task as done even on error
-    print("🏁 Transcription worker finished")
+    logging.info("🏁 Transcription worker finished")
 
 
 def _transcribe_audio(audio_data):
@@ -288,12 +295,12 @@ def _transcribe_audio(audio_data):
 
         sf.write(filename, audio_data, SAMPLE_RATE)
 
-        print("🔄 Transcribing...")
+        logging.info("🔄 Transcribing...")
 
         # Get language from command line args or use detected language
         if detected_language:
             language = detected_language
-            print(f"🔄 Using previously detected language: {language}")
+            logging.info(f"🔄 Using previously detected language: {language}")
         else:
             language = "auto"
             for arg in sys.argv[1:]:
@@ -344,7 +351,7 @@ def _transcribe_audio(audio_data):
             else:
                 context = accumulated_text
             whisper_cmd.extend(["--prompt", context])
-            print(f"🔍 Using context: {context}")
+            logging.info(f"🔍 Using context: {context}")
 
         # Run transcription
         result = subprocess.run(
@@ -356,7 +363,7 @@ def _transcribe_audio(audio_data):
         text = result.stdout.strip()
 
         if text:
-            print(f"✅ Transcribed: {text}")
+            logging.info(f"✅ Transcribed: {text}")
 
             # If this was auto-detection, extract and store the detected language
             # if language == "auto" and not detected_language:
@@ -370,7 +377,7 @@ def _transcribe_audio(audio_data):
             #         )
             #         if match:
             #             detected_language = match.group(1)
-            #             print(f"🌍 Language detected and stored: {detected_language}")
+            #             logging.info(f"🌍 Language detected and stored: {detected_language}")
 
             # Always accumulate text
             if accumulated_text:
@@ -392,15 +399,15 @@ def _transcribe_audio(audio_data):
                     'tell application "System Events" to keystroke "v" using {command down}',
                 ]
             )
-            print("📋 Text pasted to cursor position")
+            logging.info("📋 Text pasted to cursor position")
         else:
-            print("🔇 No text transcribed")
+            logging.info("🔇 No text transcribed")
 
         # Clean up temp file
         os.remove(filename)
 
     except Exception as e:
-        print(f"❌ Transcription failed: {e}")
+        logging.error(f"❌ Transcription failed: {e}")
 
 
 def on_key_press(key):
@@ -409,7 +416,7 @@ def on_key_press(key):
 
     if key == Key.ctrl:
         if recording:
-            print("🛑 Recording stopped.")
+            logging.info("🛑 Recording stopped.")
             recording = False
 
 
@@ -418,6 +425,7 @@ def main():
 
     # Create temp directory if it doesn't exist
     os.makedirs(TEMP_DIR, exist_ok=True)
+    log_file = setup_logging("live.log", TEMP_DIR)
 
     # Parse command line arguments
     language = "auto"
@@ -426,15 +434,17 @@ def main():
         if arg.startswith("--lang="):
             language = arg.split("=", 1)[1]
         elif arg == "--help" or arg == "-h":
-            print("Usage: python live.py [OPTIONS]")
-            print("Options:")
-            print("  --lang=LANGUAGE       Set transcription language (default: auto)")
-            print("  --help, -h           Show this help message")
+            logging.info("Usage: python live.py [OPTIONS]")
+            logging.info("Options:")
+            logging.info(
+                "  --lang=LANGUAGE       Set transcription language (default: auto)"
+            )
+            logging.info("  --help, -h           Show this help message")
             return
 
     # Initialize audio processor without loading VAD to avoid startup delay
     audio_processor = AudioProcessor(load_vad=False)
-    print(f"🌍 Using language: {language}")
+    logging.info(f"🌍 Using language: {language}")
 
     # Reset state
     recording = True
@@ -458,7 +468,7 @@ def main():
         )
         audio_stream.start()
 
-        print("🔴 Recording started...")
+        logging.info("🔴 Recording started...")
 
         # Start key listener and transcription worker
         key_listener.start()
@@ -472,9 +482,9 @@ def main():
             time.sleep(0.1)
 
     except KeyboardInterrupt:
-        print("\n🛑 Interrupted by user")
+        logging.info("\n🛑 Interrupted by user")
     except Exception as e:
-        print(f"❌ Audio stream error: {e}")
+        logging.error(f"❌ Audio stream error: {e}")
     finally:
         # Stop recording flag first
         recording = False
@@ -487,9 +497,9 @@ def main():
 
         # Always wait for the queue to be fully processed to avoid race conditions.
         # .join() will block until all items that have been put() are task_done().
-        print("⏳ Finishing all remaining transcriptions...")
+        logging.info("⏳ Finishing all remaining transcriptions...")
         transcription_queue.join()
-        print("✅ All transcriptions finished.")
+        logging.info("✅ All transcriptions finished.")
 
         # Finalization complete
         finalizing = False
@@ -499,11 +509,13 @@ def main():
 
         # At the end, show all accumulated text
         if accumulated_text and accumulated_text.strip():
-            print(f"💬 Full text: {accumulated_text}")
+            logging.info(f"💬 Full text: {accumulated_text}")
             pyperclip.copy(accumulated_text)
         else:
-            print("📋 No text was transcribed")
-        print("✅ Done.")
+            logging.info("📋 No text was transcribed")
+        logging.info("✅ Done.")
+        if os.path.exists(log_file):
+            os.remove(log_file)
 
 
 if __name__ == "__main__":
