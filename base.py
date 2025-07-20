@@ -1,3 +1,4 @@
+import logging
 import os
 import subprocess
 import sys
@@ -11,6 +12,8 @@ from dotenv import load_dotenv
 from pynput import keyboard as pynput_keyboard
 from pynput.keyboard import Key
 
+from logger_config import setup_logging
+
 load_dotenv()
 
 
@@ -21,6 +24,7 @@ MODEL_PATH = os.path.join(WHISPER_CPP_PATH, "models", "ggml-large-v3-turbo.bin")
 VAD_MODEL_PATH = os.path.join(WHISPER_CPP_PATH, "models", "ggml-silero-v5.1.2.bin")
 WHISPER_CLI = os.path.join(WHISPER_CPP_PATH, "build", "bin", "whisper-cli")
 TEMP_DIR = os.path.join(BASE_DIR, "temp")
+
 
 # === STATE ===
 recording = False
@@ -41,7 +45,7 @@ def on_key_press(key):
     if key == Key.ctrl:
         global recording
         if recording:
-            print("Recording stopped.")
+            logging.info("Recording stopped.")
             recording = False
 
 
@@ -50,6 +54,7 @@ def main():
 
     # Ensure the temp directory exists before we try to write files
     os.makedirs(TEMP_DIR, exist_ok=True)
+    log_file = setup_logging("base.log", TEMP_DIR)
 
     # Parse command line arguments
     language = "auto"
@@ -57,9 +62,9 @@ def main():
         if arg.startswith("--lang="):
             language = arg.split("=", 1)[1]
 
-    print(f"Using language: {language}")
+    logging.info(f"Using language: {language}")
 
-    print("Recording started. Press Ctrl to stop and transcribe.")
+    logging.info("Recording started. Press Ctrl to stop and transcribe.")
     recording = True
     sample_rate = 16000
     sample_count = 0
@@ -94,7 +99,7 @@ def main():
         while recording:
             sd.sleep(100)
     except KeyboardInterrupt:
-        print("\nExiting...")
+        logging.info("\nExiting...")
         sys.exit(0)
 
     # Stop audio stream
@@ -111,16 +116,16 @@ def main():
     if sample_count > 0:
         filename = temp_filename
         duration_sec = sample_count / sample_rate
-        print(
+        logging.info(
             f"[DEBUG] stop_recording: recorded samples: {sample_count}, duration: {duration_sec:.2f}s"
         )
         if duration_sec < 0.5:
-            print("[INFO] Audio too short (<0.5s), skipping transcription.")
+            logging.info("[INFO] Audio too short (<0.5s), skipping transcription.")
             os.remove(filename)
             sys.exit(0)
 
         # Transcribe
-        print("Transcribing...")
+        logging.info("Transcribing...")
         result = subprocess.run(
             [
                 WHISPER_CLI,
@@ -155,9 +160,9 @@ def main():
             text=True,
         )
         text = result.stdout.strip()
-        print(f"Transcribed text: {text}")
+        logging.info(f"Transcribed text: {text}")
         pyperclip.copy(text)
-        print("Text copied to clipboard.")
+        logging.info("Text copied to clipboard.")
         if text:
             subprocess.run(
                 [
@@ -166,15 +171,19 @@ def main():
                     'tell application "System Events" to keystroke "v" using {command down}',
                 ]
             )
-            print("Text pasted from clipboard.")
+            logging.info("Text pasted from clipboard.")
 
         os.remove(filename)
-        print("Done.")
+        logging.info("Done.")
+        if os.path.exists(log_file):
+            os.remove(log_file)
         sys.exit(0)
     else:
-        print("[ERROR] No audio was captured. Nothing to transcribe.")
+        logging.error("[ERROR] No audio was captured. Nothing to transcribe.")
         if temp_filename and os.path.exists(temp_filename):
             os.remove(temp_filename)
+        if os.path.exists(log_file):
+            os.remove(log_file)
         sys.exit(1)
 
 
