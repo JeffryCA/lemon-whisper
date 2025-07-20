@@ -15,11 +15,8 @@ from pynput import keyboard as pynput_keyboard
 from pynput.keyboard import Key
 
 from common import (
-    MODEL_PATH,
     SAMPLE_RATE,
     TEMP_DIR,
-    VAD_MODEL_PATH,
-    WHISPER_CLI,
     paste_from_clipboard,
     run_transcription,
     safe_copy,
