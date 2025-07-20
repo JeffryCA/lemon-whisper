@@ -31,12 +31,12 @@ cmake -B build
 cmake --build build -j
 
 # Download model if missing
-MODEL_FILE="models/ggml-large-v3-q5_0.bin"
+MODEL_FILE="models/ggml-large-v3-turbo.bin"
 if [ -f "$MODEL_FILE" ]; then
   echo "Quantized model already exists."
 else
   echo "Downloading quantized model..."
-  ./models/download-ggml-model.sh large-v3-q5_0
+  ./models/download-ggml-model.sh large-v3-turbo
 fi
 
 # Download VAD model if missing
