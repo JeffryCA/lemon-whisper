@@ -1,30 +1,21 @@
 import logging
 import os
-import subprocess
 import sys
 import tempfile
 
-import numpy as np
-import pyperclip
 import sounddevice as sd
 import soundfile as sf
-from dotenv import load_dotenv
 from pynput import keyboard as pynput_keyboard
 from pynput.keyboard import Key
 
+from common import (
+    SAMPLE_RATE,
+    TEMP_DIR,
+    paste_from_clipboard,
+    run_transcription,
+    safe_copy,
+)
 from logger_config import setup_logging
-
-load_dotenv()
-
-
-# === CONFIGURATION ===
-BASE_DIR = os.path.dirname(os.path.realpath(__file__))
-WHISPER_CPP_PATH = os.environ.get("WHISPER_CPP_PATH")
-MODEL_PATH = os.path.join(WHISPER_CPP_PATH, "models", "ggml-large-v3-turbo.bin")
-VAD_MODEL_PATH = os.path.join(WHISPER_CPP_PATH, "models", "ggml-silero-v5.1.2.bin")
-WHISPER_CLI = os.path.join(WHISPER_CPP_PATH, "build", "bin", "whisper-cli")
-TEMP_DIR = os.path.join(BASE_DIR, "temp")
-
 
 # === STATE ===
 recording = False
@@ -66,7 +57,6 @@ def main():
 
     logging.info("Recording started. Press Ctrl to stop and transcribe.")
     recording = True
-    sample_rate = 16000
     sample_count = 0
 
     # Create temporary file for streaming audio
@@ -75,7 +65,7 @@ def main():
     audio_file = sf.SoundFile(
         temp_filename,
         mode="w",
-        samplerate=sample_rate,
+        samplerate=SAMPLE_RATE,
         channels=1,
         subtype="PCM_16",
     )
@@ -87,7 +77,7 @@ def main():
     # Start audio stream in main thread
     global audio_stream
     audio_stream = sd.InputStream(
-        samplerate=sample_rate,
+        samplerate=SAMPLE_RATE,
         channels=1,
         callback=audio_callback,
         dtype="int16",
@@ -115,7 +105,7 @@ def main():
     # Process the recording
     if sample_count > 0:
         filename = temp_filename
-        duration_sec = sample_count / sample_rate
+        duration_sec = sample_count / SAMPLE_RATE
         logging.info(
             f"[DEBUG] stop_recording: recorded samples: {sample_count}, duration: {duration_sec:.2f}s"
         )
@@ -126,49 +116,12 @@ def main():
 
         # Transcribe
         logging.info("Transcribing...")
-        result = subprocess.run(
-            [
-                WHISPER_CLI,
-                "--model",
-                MODEL_PATH,
-                "--file",
-                filename,
-                "--language",
-                language,
-                "--no-timestamps",
-                "--max-context",
-                "0",
-                "--max-len",
-                "500",
-                "--audio-ctx",
-                "1000",
-                "--split-on-word",
-                "--threads",
-                "2",
-                "--temperature",
-                "0.2",
-                "--vad",
-                "--vad-model",
-                VAD_MODEL_PATH,
-                "--vad-threshold",
-                "0.6",
-            ],
-            capture_output=True,
-            text=True,
-        )
-        text = result.stdout.strip()
+        text = run_transcription(filename, language)
         logging.info(f"Transcribed text: {text}")
-        pyperclip.copy(text)
+        safe_copy(text)
         logging.info("Text copied to clipboard.")
         if text:
-            subprocess.run(
-                [
-                    "osascript",
-                    "-e",
-                    'tell application "System Events" to keystroke "v" using {command down}',
-                ]
-            )
-            logging.info("Text pasted from clipboard.")
+            paste_from_clipboard()
 
         os.remove(filename)
         logging.info("Done.")
