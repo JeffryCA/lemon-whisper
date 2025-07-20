@@ -1,7 +1,6 @@
 import logging
 import os
 import queue
-import subprocess
 import sys
 import tempfile
 import threading
@@ -9,31 +8,30 @@ import time
 from collections import deque
 
 import numpy as np
-import pyperclip
 import sounddevice as sd
+import soundfile as sf
 import torch
-from dotenv import load_dotenv
 from pynput import keyboard as pynput_keyboard
 from pynput.keyboard import Key
 
+from common import (
+    MODEL_PATH,
+    SAMPLE_RATE,
+    TEMP_DIR,
+    VAD_MODEL_PATH,
+    WHISPER_CLI,
+    paste_from_clipboard,
+    run_transcription,
+    safe_copy,
+)
 from logger_config import setup_logging
 
-load_dotenv()
-
-# === CONFIGURATION ===
-BASE_DIR = os.path.dirname(os.path.realpath(__file__))
-WHISPER_CPP_PATH = os.environ.get("WHISPER_CPP_PATH")
-MODEL_PATH = os.path.join(WHISPER_CPP_PATH, "models", "ggml-large-v3-turbo.bin")
-VAD_MODEL_PATH = os.path.join(WHISPER_CPP_PATH, "models", "ggml-silero-v5.1.2.bin")
-WHISPER_CLI = os.path.join(WHISPER_CPP_PATH, "build", "bin", "whisper-cli")
-TEMP_DIR = os.path.join(BASE_DIR, "temp")
-
 # Audio configuration
-SAMPLE_RATE = 16000
 CHUNK_DURATION = 0.032  # 32ms chunks for VAD analysis (512 samples at 16kHz)
 CHUNK_SIZE = 512  # Silero VAD requires exactly 512 samples for 16kHz
 PAUSE_THRESHOLD = 0.600  # seconds
 VAD_THRESHOLD = 0.6
+
 
 # === STATE ===
 recording = False
@@ -282,8 +280,6 @@ def _transcribe_audio(audio_data):
         ) as tmpfile:
             filename = tmpfile.name
 
-        import soundfile as sf
-
         sf.write(filename, audio_data, SAMPLE_RATE)
 
         logging.info("🔄 Transcribing...")
@@ -302,34 +298,7 @@ def _transcribe_audio(audio_data):
             if language != "auto":
                 detected_language = language
 
-        # Prepare whisper command with context if available
-        whisper_cmd = [
-            WHISPER_CLI,
-            "--model",
-            MODEL_PATH,
-            "--file",
-            filename,
-            "--language",
-            language,
-            "--no-timestamps",
-            "--max-context",
-            "0",
-            "--max-len",
-            "500",
-            "--audio-ctx",
-            "1000",
-            "--split-on-word",
-            "--threads",
-            "2",
-            "--temperature",
-            "0.2",
-            "--vad",
-            "--vad-model",
-            VAD_MODEL_PATH,
-            "--vad-threshold",
-            str(VAD_THRESHOLD),
-        ]
-
+        context = ""
         # Add context from previously transcribed text if available
         if accumulated_text and accumulated_text.strip():
             # Use the last 100 words as context to avoid making the prompt too long
@@ -338,34 +307,12 @@ def _transcribe_audio(audio_data):
                 context = " ".join(context_words[-100:])
             else:
                 context = accumulated_text
-            whisper_cmd.extend(["--prompt", context])
-            logging.info(f"🔍 Using context: {context}")
 
         # Run transcription
-        result = subprocess.run(
-            whisper_cmd,
-            capture_output=True,
-            text=True,
-        )
-
-        text = result.stdout.strip()
+        text = run_transcription(filename, language, context)
 
         if text:
             logging.info(f"✅ Transcribed: {text}")
-
-            # If this was auto-detection, extract and store the detected language
-            # if language == "auto" and not detected_language:
-            #     stderr_output = result.stderr
-            #     if "detected language:" in stderr_output.lower():
-            #         # Parse detected language from whisper output
-            #         import re
-
-            #         match = re.search(
-            #             r"detected language:\s*(\w+)", stderr_output, re.IGNORECASE
-            #         )
-            #         if match:
-            #             detected_language = match.group(1)
-            #             logging.info(f"🌍 Language detected and stored: {detected_language}")
 
             # Always accumulate text
             if accumulated_text:
@@ -379,15 +326,8 @@ def _transcribe_audio(audio_data):
                 text_to_paste = " " + text
             else:
                 text_to_paste = text
-            pyperclip.copy(text_to_paste)
-            subprocess.run(
-                [
-                    "osascript",
-                    "-e",
-                    'tell application "System Events" to keystroke "v" using {command down}',
-                ]
-            )
-            logging.info("📋 Text pasted to cursor position")
+            safe_copy(text_to_paste)
+            paste_from_clipboard()
         else:
             logging.info("🔇 No text transcribed")
 
@@ -503,7 +443,7 @@ def main():
         # At the end, show all accumulated text
         if accumulated_text and accumulated_text.strip():
             logging.info(f"💬 Full text: {accumulated_text}")
-            pyperclip.copy(accumulated_text)
+            safe_copy(accumulated_text)
         else:
             logging.info("📋 No text was transcribed")
         logging.info("✅ Done.")
