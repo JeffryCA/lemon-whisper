@@ -13,8 +13,6 @@ Lemon Whisper is a minimal macOS tool to:
   - **Base Transcription**: Record complete audio, then transcribe when you stop (more accurate)
   - **Live Transcription**: Real-time transcription as you speak with automatic pause detection
 - Local-only transcription with Whisper.cpp
-- Quantized Whisper model (Q5)
-- Voice Activity Detection to avoid false positives
 - Language selection through menu bar
 - Hotkey integration with Hammerspoon
 - Smart menu bar indicator (🍋 idle, 📝 working)
