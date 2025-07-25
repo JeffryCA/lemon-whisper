@@ -24,26 +24,16 @@ class WhisperManager: ObservableObject {
     }
 
     private func initializeWhisper() async {
-        guard let whisperCppPath = ProcessInfo.processInfo.environment["WHISPER_CPP_PATH"] else {
-            self.alertMessage = "WHISPER_CPP_PATH environment variable is not set."
+        guard let modelURL = Bundle.main.url(forResource: "ggml-large-v3-turbo", withExtension: "bin"),
+              let vadURL = Bundle.main.url(forResource: "ggml-silero-v5.1.2", withExtension: "bin")
+        else {
+            self.alertMessage = "Model files not found in the application bundle."
             self.showAlert = true
             return
         }
 
-        let modelPath = "\(whisperCppPath)/models/ggml-large-v3-turbo.bin"
-        let vadModelPath = "\(whisperCppPath)/models/ggml-silero-v5.1.2.bin"
-
-        if !FileManager.default.fileExists(atPath: modelPath) {
-            self.alertMessage = "Model file not found at \(modelPath)"
-            self.showAlert = true
-            return
-        }
-
-        if !FileManager.default.fileExists(atPath: vadModelPath) {
-            self.alertMessage = "VAD model file not found at \(vadModelPath)"
-            self.showAlert = true
-            return
-        }
+        let modelPath = modelURL.path
+        let vadModelPath = vadURL.path
 
         do {
             self.whisperContext = try await WhisperContext.createContext(path: modelPath)

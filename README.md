@@ -84,6 +84,14 @@ This will:
 
 ✅ No additional edits needed.
 
+### macOS app setup
+
+To use the bundled macOS app, add the Whisper models to the Xcode project:
+
+1. Open `LemonWhisper.xcodeproj`.
+2. Drag `ggml-large-v3-turbo.bin` and `ggml-silero-v5.1.2.bin` from `whisper.cpp/models` into the **Resources** group. Ensure *Copy items if needed* is checked so the files are bundled with the app.
+3. Build and run the app normally.
+
 ## ⚙️ Configure Hammerspoon
 
 Hammerspoon handles the global hotkey and the 🍋 indicator.
