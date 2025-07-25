@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		643AE2282E33BEC90097908D /* whisper.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 643AE2272E33BEC90097908D /* whisper.xcframework */; };
+		643AE2292E33BEC90097908D /* whisper.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 643AE2272E33BEC90097908D /* whisper.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		64B79E112E31F52C00096BEF /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -23,7 +28,22 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		643AE22A2E33BEC90097908D /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				643AE2292E33BEC90097908D /* whisper.xcframework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		643AE2272E33BEC90097908D /* whisper.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = whisper.xcframework; path = "../../whisper.cpp/build-apple/whisper.xcframework"; sourceTree = "<group>"; };
 		64B79E022E31F52A00096BEF /* LemonWhisper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LemonWhisper.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		64B79E102E31F52C00096BEF /* LemonWhisperTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LemonWhisperTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		64B79E1A2E31F52C00096BEF /* LemonWhisperUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LemonWhisperUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -52,6 +72,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				643AE2282E33BEC90097908D /* whisper.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -72,12 +93,21 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		643AE2262E33BEC80097908D /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				643AE2272E33BEC90097908D /* whisper.xcframework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		64B79DF92E31F52A00096BEF = {
 			isa = PBXGroup;
 			children = (
 				64B79E042E31F52A00096BEF /* LemonWhisper */,
 				64B79E132E31F52C00096BEF /* LemonWhisperTests */,
 				64B79E1D2E31F52C00096BEF /* LemonWhisperUITests */,
+				643AE2262E33BEC80097908D /* Frameworks */,
 				64B79E032E31F52A00096BEF /* Products */,
 			);
 			sourceTree = "<group>";
@@ -102,6 +132,7 @@
 				64B79DFE2E31F52A00096BEF /* Sources */,
 				64B79DFF2E31F52A00096BEF /* Frameworks */,
 				64B79E002E31F52A00096BEF /* Resources */,
+				643AE22A2E33BEC90097908D /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
