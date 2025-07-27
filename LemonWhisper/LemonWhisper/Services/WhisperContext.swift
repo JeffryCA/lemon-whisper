@@ -1,6 +1,6 @@
-
-import Foundation
 import os
+import whisper
+import Foundation
 
 
 // Meet Whisper C++ constraint: Don't access from more than one thread at a time.
@@ -31,8 +31,9 @@ actor WhisperContext {
         
         // Read language directly from UserDefaults
         let selectedLanguage = UserDefaults.standard.string(forKey: "SelectedLanguage") ?? "auto"
+        let languageCode = selectedLanguage.prefix(2)
         if selectedLanguage != "auto" {
-            languageCString = Array(selectedLanguage.utf8CString)
+            languageCString = Array(languageCode.utf8CString)
             params.language = languageCString?.withUnsafeBufferPointer { ptr in
                 ptr.baseAddress
             }

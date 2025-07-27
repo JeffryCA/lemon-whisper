@@ -1,20 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-<dict>
-	<key>CFBundleIdentifier</key>
-	<string>com.example.LemonWhisper</string>
-	<key>CFBundleName</key>
-	<string>LemonWhisper</string>
-	<key>CFBundleVersion</key>
-	<string>1</string>
-	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
-	<key>LSMinimumSystemVersion</key>
-	<string>13.0</string>
-	<key>NSHumanReadableCopyright</key>
-	<string>Copyright © 2025. All rights reserved.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>This app requires microphone access to transcribe your voice.</string>
-</dict>
+	<dict>
+		<key>NSMicrophoneUsageDescription</key>
+		<string>This app requires access to the microphone for audio recording.</string>
+		<key>NSAccessibilityUsageDescription</key>
+		<string>This app requires accessibility permissions to register a global hotkey.</string>
+	</dict>
 </plist>
