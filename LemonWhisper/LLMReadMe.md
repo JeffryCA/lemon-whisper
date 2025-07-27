@@ -9,6 +9,7 @@ Build a lightweight macOS app that offers simple local transcription functionali
 ## User Engagement
 
 User is a beginner swift programmer so explain the code and the concepts so that he learns as he goes along.
+Always ask the user for context/access to other files if they are relevant to the task at hand.
 
 ---
 
