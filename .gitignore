@@ -210,5 +210,5 @@ __marimo__/
 temp/
 whisper.cpp/
 
-*/Resources/models/
+**/Resources/models/
 LemonWhisper/LemonWhisper/Resources/models/

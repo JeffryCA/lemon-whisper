@@ -33,6 +33,7 @@ Progressive implementation plan
     - For the design lets try to use macOS new glass like effect
     - [ ] Let user define the hotkey for recording (start and stop in UI)
     - [ ] Language selection in settings
+    - [ ] Download the models on first run IF they are not already downloaded
 
 
 ---
