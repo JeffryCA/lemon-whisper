@@ -47,36 +47,9 @@ struct ContentView: View {
         .padding()
         .onAppear {
             requestMicrophonePermission()
-            // Request Accessibility permission
-            if !AXIsProcessTrusted() {
-                let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as NSString: true] as CFDictionary
-                _ = AXIsProcessTrustedWithOptions(options)
-            }
-            Task {
-                let modelURL = Bundle.main.url(forResource: "ggml-large-v3-turbo", withExtension: "bin")!
-                whisperCtx = try? await WhisperContext.createContext(path: modelURL.path)
-            }
-
-            // Hotkey setup: control + Y (German keyboard: Y is kVK_ANSI_Z)
-            let keyCodeGermanY: UInt32 = UInt32(kVK_ANSI_Z) // "Y" on German keyboard layout
-            let modifiers: UInt32 = UInt32(controlKey)
-
-            let hotKeyID = EventHotKeyID(signature: OSType(32), id: 1)
-            var hotKeyRef: EventHotKeyRef?
-            RegisterEventHotKey(keyCodeGermanY, modifiers, hotKeyID, GetEventDispatcherTarget(), 0, &hotKeyRef)
-
-            InstallEventHandler(
-                GetEventDispatcherTarget(),
-                hotKeyHandler,
-                1,
-                [EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))],
-                nil,
-                nil
-            )
-
-            NotificationCenter.default.addObserver(forName: .toggleRecordingHotKey, object: nil, queue: .main) { _ in
-                toggleRecording()
-            }
+            requestAccessibilityPermission()
+            setupWhisperContext()
+            setupHotKey()
         }
     }
 
@@ -159,6 +132,42 @@ struct ContentView: View {
         }
     }
 
+    func requestAccessibilityPermission() {
+        if !AXIsProcessTrusted() {
+            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as NSString: true] as CFDictionary
+            _ = AXIsProcessTrustedWithOptions(options)
+        }
+    }
+
+    func setupWhisperContext() {
+        Task {
+            let modelURL = Bundle.main.url(forResource: "ggml-large-v3-turbo", withExtension: "bin")!
+            whisperCtx = try? await WhisperContext.createContext(path: modelURL.path)
+        }
+    }
+
+    func setupHotKey() {
+        let keyCodeGermanY: UInt32 = UInt32(kVK_ANSI_Z) // "Y" on German keyboard layout
+        let modifiers: UInt32 = UInt32(controlKey)
+
+        let hotKeyID = EventHotKeyID(signature: OSType(32), id: 1)
+        var hotKeyRef: EventHotKeyRef?
+        RegisterEventHotKey(keyCodeGermanY, modifiers, hotKeyID, GetEventDispatcherTarget(), 0, &hotKeyRef)
+
+        InstallEventHandler(
+            GetEventDispatcherTarget(),
+            hotKeyHandler,
+            1,
+            [EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))],
+            nil,
+            nil
+        )
+
+        NotificationCenter.default.addObserver(forName: .toggleRecordingHotKey, object: nil, queue: .main) { _ in
+            toggleRecording()
+        }
+    }
+
 }
 
 
@@ -167,3 +176,5 @@ struct ContentView_Previews: PreviewProvider {
         ContentView()
     }
 }
+
+    

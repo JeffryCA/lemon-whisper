@@ -20,11 +20,6 @@ find /Users/jeffrycacho/Documents/personal/projects/lemon-whisper/LemonWhisper/L
 Files:
 Resources/models/ggml-large-v3-turbo.bin
 Resources/models/ggml-silero-v5.1.2.bin
-Assets.xcassets/AppIcon.appiconset/Contents.json
-Assets.xcassets/AppIcon.appiconset/lemon.png
-Assets.xcassets/AppIcon.appiconset/lemon_256.png
-Assets.xcassets/AccentColor.colorset/Contents.json
-Assets.xcassets/Contents.json
 LemonWhisperApp.swift
 LemonWhisper.entitlements
 AudioRecorder.swift
