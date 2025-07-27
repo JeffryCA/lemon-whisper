@@ -28,4 +28,22 @@ Progressive implementation plan
 - [ ] Make sure the menu bar app stays active even when the main window is closed
 - [ ] Add a quit option to the menu bar app
 - [ ] Add a open window option to the menu bar app
+- [ ] Make the UI of the app polished (onboarding to get permissions, settings page)
+    - For the design lets try to use macOS new glass like effect
+    - [ ] Let user define the hotkey for recording (start and stop in UI)
+    - [ ] Language selection in settings
 
+
+---
+
+Possible future features:
+- [ ] Offer online transcription for different providers
+- [ ] "Hey Lemon" -> should automatically call a local LLM endpoint for assistant like features
+- [ ] Instead of saving to clipboard and pasting offer optionalilty to save to a file
+    - [ ] Save those transcriptions to a directory set by the user
+    - [ ] Offer a way for the user to view, edit and delete those transcriptions
+- [ ] Clean transcription using LLMs
+- [ ] Reliably capture audio from the microphone AND the system audio for meetings
+    - [ ] Create an index of peoples voices and when transcribing meetings, identify who is speaking.
+- [ ] Obsidian integration
+    - [ ] Long transcriptions get enriched with metadata (e.g. speakers, bulletpoints)
