@@ -26,21 +26,12 @@ actor WhisperContext {
     func fullTranscribe(samples: [Float]) -> Bool {
         guard let context = context else { return false }
         
-        let maxThreads = max(1, min(8, cpuCount() - 2))
+        let maxThreads = 2
         var params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
         
-        // Read language directly from UserDefaults
-        let selectedLanguage = UserDefaults.standard.string(forKey: "SelectedLanguage") ?? "auto"
-        let languageCode = selectedLanguage.prefix(2)
-        if selectedLanguage != "auto" {
-            languageCString = Array(languageCode.utf8CString)
-            params.language = languageCString?.withUnsafeBufferPointer { ptr in
-                ptr.baseAddress
-            }
-        } else {
-            languageCString = nil
-            params.language = nil
-        }
+
+        languageCString = Array("en".utf8CString)
+        params.language = languageCString!.withUnsafeBufferPointer { $0.baseAddress }
         
         if prompt != nil {
             promptCString = Array(prompt!.utf8CString)
@@ -54,7 +45,7 @@ actor WhisperContext {
         
         params.print_realtime = true
         params.print_progress = false
-        params.print_timestamps = true
+        params.print_timestamps = false
         params.print_special = false
         params.translate = false
         params.n_threads = Int32(maxThreads)
@@ -62,6 +53,8 @@ actor WhisperContext {
         params.no_context = true
         params.single_segment = false
         params.temperature = 0.2
+        params.max_len = 500
+        params.audio_ctx = 1000
 
         whisper_reset_timings(context)
         
@@ -71,7 +64,7 @@ actor WhisperContext {
             params.vad_model_path = (vadModelPath as NSString).utf8String
             
             var vadParams = whisper_vad_default_params()
-            vadParams.threshold = 0.50
+            vadParams.threshold = 0.6
             vadParams.min_speech_duration_ms = 250
             vadParams.min_silence_duration_ms = 100
             vadParams.max_speech_duration_s = Float.greatestFiniteMagnitude

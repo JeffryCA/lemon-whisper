@@ -6,5 +6,7 @@
 		<string>This app requires access to the microphone for audio recording.</string>
 		<key>NSAccessibilityUsageDescription</key>
 		<string>This app requires accessibility permissions to register a global hotkey.</string>
+		<key>NSAppleEventsUsageDescription</key>
+		<string>Used to automate pasting the transcript into other apps</string>
 	</dict>
 </plist>
