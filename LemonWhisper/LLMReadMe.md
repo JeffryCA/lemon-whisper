@@ -20,7 +20,7 @@ Progressive implementation plan
 - [x] Make sure the whisper setting match the ones in (pyLemonWhisper/common.py)
 - [x] Remove the transcription button and now when we stop recording we transcribe the audio
 - [x] when you stop recording, copy the transcription to the clipboard and also paste it into whatever text field is currently active (lets add a test text field to the testing-UI)
-- [ ] Add hotkey support for recording (control + Y to start and to stop) - hotkey should work even when the app is in the background!
+- [x] Add hotkey support for recording (control + Y to start and to stop) - hotkey should work even when the app is in the background!
 - [ ] Move the functionality to a menu bar app - keep the testing-UI for debugging purposes
 - [ ] Add language selection on the menu bar app
 - [ ] Add an option to use live transcription (transcribe as you speak) using VAD see (pyLemonWhisper/live.py)
@@ -28,6 +28,7 @@ Progressive implementation plan
 - [ ] Make sure the menu bar app stays active even when the main window is closed
 - [ ] Add a quit option to the menu bar app
 - [ ] Add a open window option to the menu bar app
+- [ ] Fix the app icon and menu bar icon
 - [ ] Make the UI of the app polished (onboarding to get permissions, settings page)
     - For the design lets try to use macOS new glass like effect
     - [ ] Let user define the hotkey for recording (start and stop in UI)
