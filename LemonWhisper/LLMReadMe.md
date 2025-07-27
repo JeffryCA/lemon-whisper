@@ -11,6 +11,27 @@ Build a lightweight macOS app that offers simple local transcription functionali
 User is a beginner swift programmer so explain the code and the concepts so that he learns as he goes along.
 Always ask the user for context/access to other files if they are relevant to the task at hand.
 
+Files created so far:
+
+```bash
+find /Users/jeffrycacho/Documents/personal/projects/lemon-whisper/LemonWhisper/LemonWhisper -type f | sed 's|/Users/jeffrycacho/Documents/personal/projects/lemon-whisper/LemonWhisper/LemonWhisper/||'
+```
+
+Files:
+Resources/models/ggml-large-v3-turbo.bin
+Resources/models/ggml-silero-v5.1.2.bin
+Assets.xcassets/AppIcon.appiconset/Contents.json
+Assets.xcassets/AppIcon.appiconset/lemon.png
+Assets.xcassets/AppIcon.appiconset/lemon_256.png
+Assets.xcassets/AccentColor.colorset/Contents.json
+Assets.xcassets/Contents.json
+LemonWhisperApp.swift
+LemonWhisper.entitlements
+AudioRecorder.swift
+Views/ContentView.swift
+Info.plist
+Services/WhisperContext.swift
+
 ---
 
 ## 🗺️ Feature Roadmap

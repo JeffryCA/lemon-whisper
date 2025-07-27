@@ -83,7 +83,9 @@ struct ContentView: View {
     func toggleRecording() {
         if isRecording {
             recorder.stopRecording()
-            transcribe()
+            Task {
+                await transcribe()
+            }
         } else {
             previouslyActiveApp = NSWorkspace.shared.frontmostApplication
             recorder.startRecording()
@@ -91,69 +93,58 @@ struct ContentView: View {
         isRecording.toggle()
     }
     
-    func transcribe() {
+    func transcribe() async {
         guard let wavURL = recorder.latestWavURL else { return }
         isTranscribing = true
         transcription = ""   // clear previous
         
-        Task.detached {
-            do {
-                // 1. Load WAV samples as Float32
-                let file = try AVAudioFile(forReading: wavURL)
-                let totalFrames = Int(file.length)
-                guard
-                    let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat,
-                                                  frameCapacity: AVAudioFrameCount(totalFrames))
-                else { throw NSError(domain: "BufferFail", code: -1) }
-                try file.read(into: buffer)
+        do {
+            // 1. Load WAV samples as Float32
+            let file = try AVAudioFile(forReading: wavURL)
+            let totalFrames = Int(file.length)
+            guard
+                let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat,
+                                              frameCapacity: AVAudioFrameCount(totalFrames))
+            else { throw NSError(domain: "BufferFail", code: -1) }
+            try file.read(into: buffer)
 
-                // Down‑mix to mono if needed
-                guard let floatData = buffer.floatChannelData else { throw NSError(domain: "NoData", code: -2) }
-                let channelPtr = floatData[0]   // assuming mono
-                let sampleCount = Int(buffer.frameLength)
-                let samples = Array(UnsafeBufferPointer(start: channelPtr, count: sampleCount))
+            // Down‑mix to mono if needed
+            guard let floatData = buffer.floatChannelData else { throw NSError(domain: "NoData", code: -2) }
+            let channelPtr = floatData[0]   // assuming mono
+            let sampleCount = Int(buffer.frameLength)
+            let samples = Array(UnsafeBufferPointer(start: channelPtr, count: sampleCount))
 
-                // 2. Use previously loaded Whisper context
-                guard let whisperCtx = whisperCtx else {
-                    throw NSError(domain: "ModelNotReady", code: -1)
-                }
+            // 2. Use previously loaded Whisper context
+            guard let ctx = whisperCtx else {
+                throw NSError(domain: "ModelNotReady", code: -1)
+            }
 
-                // 3. Run transcription
-                let ok = await whisperCtx.fullTranscribe(samples: samples)
-                let result = ok ? await whisperCtx.getTranscription() : "Transcription failed."
+            // 3. Run transcription
+            let ok = await ctx.fullTranscribe(samples: samples)
+            let result = ok ? await ctx.getTranscription().trimmingCharacters(in: .whitespacesAndNewlines) : "Transcription failed."
 
-                // 4. Update UI on main thread
-                await MainActor.run {
-                    transcription = result
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(result, forType: .string)
-                    // Hide our app and activate the previously focused app
-                    if let prevApp = previouslyActiveApp {
-                        prevApp.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
-                    }
-                    NSApp.hide(nil)
+            // 4. Update UI on main thread
+            await MainActor.run {
+                transcription = result
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(result, forType: .string)
+                // Explicitly resign first responder before pasting
+                NSApp.keyWindow?.makeFirstResponder(nil)
 
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
-                        let cmdDown = CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(kVK_Command), keyDown: true)
-                        let vDown = CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: true)
-                        let vUp = CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: false)
-                        let cmdUp = CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(kVK_Command), keyDown: false)
-
-                        vDown?.flags = .maskCommand
-                        vUp?.flags = .maskCommand
-
-                        cmdDown?.post(tap: .cgAnnotatedSessionEventTap)
-                        vDown?.post(tap: .cgAnnotatedSessionEventTap)
-                        vUp?.post(tap: .cgAnnotatedSessionEventTap)
-                        cmdUp?.post(tap: .cgAnnotatedSessionEventTap)
-                    }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    let src = CGEventSource(stateID: .hidSystemState)
+                    let vDown = CGEvent(keyboardEventSource: src, virtualKey: 0x09, keyDown: true) // V key
+                    let vUp = CGEvent(keyboardEventSource: src, virtualKey: 0x09, keyDown: false)
+                    vDown?.flags = .maskCommand
+                    vDown?.post(tap: .cgAnnotatedSessionEventTap)
+                    vUp?.post(tap: .cgAnnotatedSessionEventTap)
                     isTranscribing = false
                 }
-            } catch {
-                await MainActor.run {
-                    transcription = "Error: \(error.localizedDescription)"
-                    isTranscribing = false
-                }
+            }
+        } catch {
+            await MainActor.run {
+                transcription = "Error: \(error.localizedDescription)"
+                isTranscribing = false
             }
         }
     }

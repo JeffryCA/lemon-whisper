@@ -5,8 +5,8 @@
 		<key>NSMicrophoneUsageDescription</key>
 		<string>This app requires access to the microphone for audio recording.</string>
 		<key>NSAccessibilityUsageDescription</key>
-		<string>This app requires accessibility permissions to register a global hotkey.</string>
+		<string>LemonWhisper needs accessibility access to simulate keyboard events.</string>
 		<key>NSAppleEventsUsageDescription</key>
-		<string>Used to automate pasting the transcript into other apps</string>
+		<string>LemonWhisper needs access to control other apps for paste functionality.</string>
 	</dict>
 </plist>

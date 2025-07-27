@@ -9,7 +9,6 @@
 /* Begin PBXBuildFile section */
 		643AE2282E33BEC90097908D /* whisper.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 643AE2272E33BEC90097908D /* whisper.xcframework */; };
 		643AE2292E33BEC90097908D /* whisper.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 643AE2272E33BEC90097908D /* whisper.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
-		64B79E2D2E31F52C00096BEF /* LemonWhisper/Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 64B79E2E2E31F52C00096BEF /* LemonWhisper/Info.plist */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -51,9 +50,22 @@
 		64B79E2E2E31F52C00096BEF /* LemonWhisper/Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = LemonWhisper/Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		640B629A2E36787F0079DDA4 /* Exceptions for "LemonWhisper" folder in "LemonWhisper" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 64B79E012E31F52A00096BEF /* LemonWhisper */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		64B79E042E31F52A00096BEF /* LemonWhisper */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				640B629A2E36787F0079DDA4 /* Exceptions for "LemonWhisper" folder in "LemonWhisper" target */,
+			);
 			path = LemonWhisper;
 			sourceTree = "<group>";
 		};
@@ -254,7 +266,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				64B79E2D2E31F52C00096BEF /* LemonWhisper/Info.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

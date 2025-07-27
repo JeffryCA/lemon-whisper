@@ -93,7 +93,8 @@ actor WhisperContext {
         guard let context = context else { return "" }
         var transcription = ""
         for i in 0..<whisper_full_n_segments(context) {
-            transcription += String(cString: whisper_full_get_segment_text(context, i))
+            let segment = String(cString: whisper_full_get_segment_text(context, i)).trimmingCharacters(in: .whitespacesAndNewlines)
+            transcription += segment
         }
         return transcription
     }
