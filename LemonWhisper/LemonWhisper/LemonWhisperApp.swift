@@ -60,10 +60,12 @@ final class LemonWhisperController: ObservableObject {
     func toggleRecording() {
         if isRecording {
             recorder.stopRecording()
+            RecordingPulseHUD.shared.showPulse(isRecording: false)
             transcribeLatestRecording()
         } else {
             capturePasteTargetApp()
             recorder.startRecording()
+            RecordingPulseHUD.shared.showPulse(isRecording: true)
         }
         isRecording.toggle()
     }
@@ -96,7 +98,14 @@ final class LemonWhisperController: ObservableObject {
                     print("❌ Whisper model not found in bundle resources")
                     return
                 }
-                _ = try await WhisperContext.createContext(path: modelPath)
+                let context = try await WhisperContext.createContext(path: modelPath)
+
+                if let vadPath = Bundle.main.path(forResource: "ggml-silero-v5.1.2", ofType: "bin") {
+                    await context.setVADModelPath(vadPath)
+                    print("✅ VAD model enabled")
+                } else {
+                    print("⚠️ VAD model not found in bundle resources")
+                }
             } catch {
                 print("❌ Failed to load Whisper model: \(error)")
             }
@@ -154,12 +163,101 @@ final class LemonWhisperController: ObservableObject {
     }
 }
 
+@MainActor
+final class RecordingPulseHUD {
+    static let shared = RecordingPulseHUD()
+
+    private var panel: NSPanel?
+    private var dotView: NSView?
+    private var hideWorkItem: DispatchWorkItem?
+    private let dotSize: CGFloat = 22
+
+    private init() {}
+
+    func showPulse(isRecording: Bool) {
+        ensurePanel()
+        guard let panel, let dotView else { return }
+
+        hideWorkItem?.cancel()
+        let pulseColor = isRecording
+            ? NSColor(calibratedWhite: 0.55, alpha: 0.95)
+            : NSColor(calibratedWhite: 0.72, alpha: 0.95)
+        dotView.layer?.backgroundColor = pulseColor.cgColor
+
+        if let screen = activeScreen() {
+            let x = screen.frame.midX - (dotSize / 2)
+            let y = screen.frame.minY + (screen.frame.height * 0.75)
+            panel.setFrame(NSRect(x: x, y: y, width: dotSize, height: dotSize), display: false)
+        }
+
+        panel.alphaValue = 0
+        panel.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.10
+            panel.animator().alphaValue = 1
+        }
+
+        let hideItem = DispatchWorkItem { [weak self] in
+            guard let self, let panel = self.panel else { return }
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = 0.16
+                panel.animator().alphaValue = 0
+            }, completionHandler: {
+                panel.orderOut(nil)
+            })
+        }
+        hideWorkItem = hideItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.55, execute: hideItem)
+    }
+
+    private func ensurePanel() {
+        guard panel == nil else { return }
+
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: dotSize, height: dotSize),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.ignoresMouseEvents = true
+        panel.hidesOnDeactivate = false
+        panel.level = .floating
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+
+        let dotView = NSView(frame: NSRect(x: 0, y: 0, width: dotSize, height: dotSize))
+        dotView.wantsLayer = true
+        dotView.layer?.cornerRadius = dotSize / 2
+        dotView.layer?.backgroundColor = NSColor.systemGray.cgColor
+        panel.contentView = dotView
+
+        self.panel = panel
+        self.dotView = dotView
+    }
+
+    private func activeScreen() -> NSScreen? {
+        let mouse = NSEvent.mouseLocation
+        if let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) {
+            return screen
+        }
+        return NSScreen.main ?? NSScreen.screens.first
+    }
+}
+
 @main
 struct LemonWhisperApp: App {
     @StateObject private var controller = LemonWhisperController()
 
     var body: some Scene {
         MenuBarExtra {
+            Text(controller.isRecording ? "Status: Recording" : "Status: Idle")
+                .font(.caption)
+                .foregroundStyle(controller.isRecording ? .red : .secondary)
+
+            Divider()
+
             Button(controller.isRecording ? "Stop Recording" : "Start Recording (Ctrl+Y)") {
                 controller.toggleRecording()
             }
@@ -185,10 +283,8 @@ struct LemonWhisperApp: App {
                 NSApplication.shared.terminate(nil)
             }
         } label: {
-            Label(
-                controller.isRecording ? "LemonWhisper Recording" : "LemonWhisper",
-                systemImage: controller.isRecording ? "waveform.circle.fill" : "mic.circle.fill"
-            )
+            Image("MenuBarIcon")
+                .renderingMode(.original)
         }
     }
 }
