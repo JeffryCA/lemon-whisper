@@ -160,7 +160,7 @@ struct LemonWhisperApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            Button(controller.isRecording ? "Stop Recording (Ctrl+Y)" : "Start Recording (Ctrl+Y)") {
+            Button(controller.isRecording ? "Stop Recording" : "Start Recording (Ctrl+Y)") {
                 controller.toggleRecording()
             }
             .keyboardShortcut("y", modifiers: [.control])

@@ -209,6 +209,7 @@ __marimo__/
 # Temp
 temp/
 whisper.cpp/
+eval/runs/
 
 **/Resources/models/
 LemonWhisper/LemonWhisper/Resources/models/

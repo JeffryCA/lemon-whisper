@@ -20,9 +20,12 @@ find /Users/jeffrycacho/Documents/personal/projects/lemon-whisper/LemonWhisper/L
 Files:
 Resources/models/ggml-large-v3-turbo.bin
 Resources/models/ggml-silero-v5.1.2.bin
+Managers/FileManager+Extensions.swift
+Managers/TranscriptionManager.swift
+Managers/AudioRecorder.swift
+Managers/LiveAudioStreamManager.swift
 LemonWhisperApp.swift
 LemonWhisper.entitlements
-AudioRecorder.swift
 Views/ContentView.swift
 Info.plist
 Services/WhisperContext.swift
@@ -38,9 +41,11 @@ Progressive implementation plan
 - [x] Remove the transcription button and now when we stop recording we transcribe the audio
 - [x] when you stop recording, copy the transcription to the clipboard and also paste it into whatever text field is currently active (lets add a test text field to the testing-UI)
 - [x] Add hotkey support for recording (control + Y to start and to stop) - hotkey should work even when the app is in the background!
+- [ ] Add an option to use live transcription (transcribe as you speak) using VAD see (pyLemonWhisper/live.py)
+    - add a toggle to enable/disable live transcription in test UI
+    - use macOS native APIs for VAD instead of the silero VAD
 - [ ] Move the functionality to a menu bar app - keep the testing-UI for debugging purposes
 - [ ] Add language selection on the menu bar app
-- [ ] Add an option to use live transcription (transcribe as you speak) using VAD see (pyLemonWhisper/live.py)
 - [ ] Add toggle to enable/disable live transcription on the menu bar app
 - [ ] Make sure the menu bar app stays active even when the main window is closed
 - [ ] Add a quit option to the menu bar app
