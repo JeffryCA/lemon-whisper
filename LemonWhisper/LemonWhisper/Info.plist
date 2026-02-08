@@ -1,12 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-	<dict>
-		<key>NSMicrophoneUsageDescription</key>
-		<string>This app requires access to the microphone for audio recording.</string>
-		<key>NSAccessibilityUsageDescription</key>
-		<string>LemonWhisper needs accessibility access to simulate keyboard events.</string>
-		<key>NSAppleEventsUsageDescription</key>
-		<string>LemonWhisper needs access to control other apps for paste functionality.</string>
-	</dict>
+<dict>
+	<key>NSAccessibilityUsageDescription</key>
+	<string>LemonWhisper needs accessibility access to simulate keyboard events.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>LemonWhisper needs automation access to trigger paste in other apps when needed.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>LemonWhisper needs microphone access to record your voice for local transcription.</string>
+	<key>LSUIElement</key>
+	<true/>
+</dict>
 </plist>

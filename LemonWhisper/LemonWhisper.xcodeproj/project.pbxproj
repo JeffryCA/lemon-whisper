@@ -454,9 +454,9 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LemonWhisper/Info.plist;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "This app requires permission to monitor keyboard input to respond to the global hotkey.";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "LemonWhisper needs access to control other apps for paste functionality.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2025. All rights reserved.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app requires microphone access to transcribe your voice.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app requires access to the microphone for audio recording.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -483,9 +483,9 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LemonWhisper/Info.plist;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "This app requires permission to monitor keyboard input to respond to the global hotkey.";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "LemonWhisper needs access to control other apps for paste functionality.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2025. All rights reserved.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app requires microphone access to transcribe your voice.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app requires access to the microphone for audio recording.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

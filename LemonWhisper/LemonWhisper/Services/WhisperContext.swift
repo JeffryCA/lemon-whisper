@@ -5,6 +5,7 @@ import Foundation
 
 // Meet Whisper C++ constraint: Don't access from more than one thread at a time.
 actor WhisperContext {
+    static var shared: WhisperContext?
     private var context: OpaquePointer?
     private var languageCString: [CChar]?
     private var prompt: String?
@@ -23,18 +24,23 @@ actor WhisperContext {
         }
     }
 
-    func fullTranscribe(samples: [Float]) -> Bool {
+    func fullTranscribe(
+        samples: [Float],
+        language: String = "en",
+        prompt: String? = nil,
+        isLiveMode: Bool = false
+    ) -> Bool {
         guard let context = context else { return false }
         
         let maxThreads = 2
         var params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
         
 
-        languageCString = Array("en".utf8CString)
+        languageCString = Array(language.utf8CString)
         params.language = languageCString!.withUnsafeBufferPointer { $0.baseAddress }
-        
-        if prompt != nil {
-            promptCString = Array(prompt!.utf8CString)
+
+        if let prompt {
+            promptCString = Array(prompt.utf8CString)
             params.initial_prompt = promptCString?.withUnsafeBufferPointer { ptr in
                 ptr.baseAddress
             }
@@ -50,10 +56,10 @@ actor WhisperContext {
         params.translate = false
         params.n_threads = Int32(maxThreads)
         params.offset_ms = 0
-        params.no_context = true
-        params.single_segment = false
-        params.temperature = 0.2
-        params.max_len = 500
+        params.no_context = !isLiveMode
+        params.single_segment = isLiveMode
+        params.temperature = isLiveMode ? 0.0 : 0.2
+        params.max_len = isLiveMode ? 120 : 500
         params.audio_ctx = 1000
 
         whisper_reset_timings(context)
@@ -102,6 +108,7 @@ actor WhisperContext {
     static func createContext(path: String) async throws -> WhisperContext {
         let whisperContext = WhisperContext()
         try await whisperContext.initializeModel(path: path)
+        WhisperContext.shared = whisperContext
         return whisperContext
     }
     
@@ -134,6 +141,10 @@ actor WhisperContext {
 
     func setPrompt(_ prompt: String?) {
         self.prompt = prompt
+    }
+
+    static func getShared() -> WhisperContext? {
+        return WhisperContext.shared
     }
 }
 
