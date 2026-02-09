@@ -118,9 +118,7 @@ struct ContentView: View {
     }
 
     private var statusLine: String {
-        let whisper = controller.whisperStatus ?? "Whisper idle"
-        let voxtral = controller.voxtralStatus ?? "Voxtral idle"
-        return "\(whisper) | \(voxtral) | Process memory: \(controller.processMemoryMB) MB"
+        "Process memory: \(controller.processMemoryMB) MB"
     }
 
     private func loadModels() async {

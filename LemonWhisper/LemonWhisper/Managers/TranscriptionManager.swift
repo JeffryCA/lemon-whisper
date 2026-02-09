@@ -75,9 +75,18 @@ class TranscriptionManager {
         language: String = "en",
         backend: TranscriptionBackend,
         targetBundleIdentifier: String?,
-        targetProcessID: pid_t?
+        targetProcessID: pid_t?,
+        onActivityChanged: ((Bool) -> Void)? = nil
     ) {
         Task {
+            await MainActor.run {
+                onActivityChanged?(true)
+            }
+            defer {
+                Task { @MainActor in
+                    onActivityChanged?(false)
+                }
+            }
             do {
                 let result: String
                 switch backend {

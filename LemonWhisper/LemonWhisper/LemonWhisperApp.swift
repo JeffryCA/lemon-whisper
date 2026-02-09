@@ -117,7 +117,13 @@ final class LemonWhisperController: ObservableObject {
             backend: selectedBackend,
             targetBundleIdentifier: targetBundleIdentifier,
             targetProcessID: targetProcessID
-        )
+        ) { isActive in
+            if isActive {
+                TranscriptionLoadingHUD.shared.show()
+            } else {
+                TranscriptionLoadingHUD.shared.hide()
+            }
+        }
     }
 
     func setBackend(_ backend: TranscriptionBackend) {
@@ -546,6 +552,78 @@ final class RecordingPulseHUD {
             return screen
         }
         return NSScreen.main ?? NSScreen.screens.first
+    }
+}
+
+@MainActor
+final class TranscriptionLoadingHUD {
+    static let shared = TranscriptionLoadingHUD()
+
+    private var panel: NSPanel?
+    private var spinner: NSProgressIndicator?
+    private let size: CGFloat = 24
+
+    private init() {}
+
+    func show() {
+        ensurePanel()
+        guard let panel else { return }
+
+        if let point = pointerPosition() {
+            panel.setFrameOrigin(NSPoint(x: point.x - (size / 2), y: point.y + 18))
+        }
+
+        panel.alphaValue = 1
+        panel.orderFrontRegardless()
+        spinner?.startAnimation(nil)
+    }
+
+    func hide() {
+        spinner?.stopAnimation(nil)
+        panel?.orderOut(nil)
+    }
+
+    private func ensurePanel() {
+        guard panel == nil else { return }
+
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: size, height: size),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.ignoresMouseEvents = true
+        panel.hidesOnDeactivate = false
+        panel.level = .floating
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+
+        let container = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: size, height: size))
+        container.material = .hudWindow
+        container.blendingMode = .withinWindow
+        container.state = .active
+        container.wantsLayer = true
+        container.layer?.cornerRadius = size / 2
+
+        let spinner = NSProgressIndicator(frame: NSRect(x: 5, y: 5, width: size - 10, height: size - 10))
+        spinner.style = .spinning
+        spinner.controlSize = .small
+        spinner.isIndeterminate = true
+        spinner.isDisplayedWhenStopped = false
+        spinner.startAnimation(nil)
+        container.addSubview(spinner)
+
+        panel.contentView = container
+
+        self.panel = panel
+        self.spinner = spinner
+    }
+
+    private func pointerPosition() -> NSPoint? {
+        let point = NSEvent.mouseLocation
+        return point.x.isFinite && point.y.isFinite ? point : nil
     }
 }
 
