@@ -6,16 +6,16 @@ import ApplicationServices
 
 enum TranscriptionBackend: String, CaseIterable, Identifiable {
     case whisper
-    case voxtralMini3B8Bit
+    case voxtral
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .whisper:
-            return "Whisper (large-v3-turbo)"
-        case .voxtralMini3B8Bit:
-            return "Voxtral Mini 3B (8-bit)"
+            return "Whisper"
+        case .voxtral:
+            return "Voxtral"
         }
     }
 }
@@ -59,7 +59,7 @@ class TranscriptionManager {
                     )
                     let result = ok ? await ctx.getTranscription().trimmingCharacters(in: .whitespacesAndNewlines) : "Transcription failed."
                     completion(result)
-                case .voxtralMini3B8Bit:
+                case .voxtral:
                     let text = try await VoxtralService.shared.transcribe(audioURL: tempURL, language: language)
                     completion(text.trimmingCharacters(in: .whitespacesAndNewlines))
                 }
@@ -104,7 +104,7 @@ class TranscriptionManager {
                         isLiveMode: false
                     )
                     result = ok ? await ctx.getTranscription().trimmingCharacters(in: .whitespacesAndNewlines) : "Transcription failed."
-                case .voxtralMini3B8Bit:
+                case .voxtral:
                     result = try await VoxtralService.shared.transcribe(audioURL: url, language: language)
                 }
 
@@ -273,14 +273,13 @@ class TranscriptionManager {
             return existing
         }
 
-        guard let modelPath = Bundle.main.path(forResource: "ggml-large-v3-turbo", ofType: "bin") else {
+        guard let model = WhisperModelCatalog.selectedModelIfDownloaded() else {
             throw NSError(domain: "WhisperModelMissing", code: -1001)
         }
 
-        let context = try await WhisperContext.createContext(path: modelPath)
-        if let vadPath = Bundle.main.path(forResource: "ggml-silero-v5.1.2", ofType: "bin") {
-            await context.setVADModelPath(vadPath)
-        }
+        let context = try await WhisperContext.createContext(path: model.localURL.path)
+        try await WhisperModelCatalog.ensureVADDownloadedIfNeeded()
+        await context.setVADModelPath(WhisperModelCatalog.vadLocalURL.path)
         return context
     }
 }

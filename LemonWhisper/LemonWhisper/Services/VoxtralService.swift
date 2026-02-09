@@ -4,8 +4,16 @@ import Foundation
 import VoxtralCore
 #endif
 
+struct VoxtralModelOption: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let sizeLabel: String
+    let description: String
+}
+
 enum VoxtralServiceError: LocalizedError {
     case unavailable
+    case modelNotConfigured
     case loadFailed(String)
     case transcriptionFailed(String)
 
@@ -13,6 +21,8 @@ enum VoxtralServiceError: LocalizedError {
         switch self {
         case .unavailable:
             return "Voxtral support is unavailable in this build."
+        case .modelNotConfigured:
+            return "No Voxtral model is configured."
         case .loadFailed(let message):
             return "Failed to load Voxtral model: \(message)"
         case .transcriptionFailed(let message):
@@ -24,15 +34,31 @@ enum VoxtralServiceError: LocalizedError {
 actor VoxtralService {
     static let shared = VoxtralService()
 
+    private let selectedModelDefaultsKey = "selectedVoxtralModelID"
+
 #if canImport(VoxtralCore)
     private var pipeline: VoxtralPipeline?
+    private var loadedModelID: String?
     private var isLoadingModel = false
     private var lastErrorMessage: String?
+
+    private var selectedModelID: String
+
+    init() {
+        let stored = UserDefaults.standard.string(forKey: selectedModelDefaultsKey)
+        if let stored, Self.modelInfo(for: stored) != nil {
+            self.selectedModelID = stored
+        } else {
+            self.selectedModelID = "mini-3b-8bit"
+        }
+    }
+#else
+    init() {}
 #endif
 
     var isReady: Bool {
 #if canImport(VoxtralCore)
-        pipeline != nil
+        pipeline != nil && loadedModelID == selectedModelID
 #else
         false
 #endif
@@ -43,6 +69,84 @@ actor VoxtralService {
         lastErrorMessage
 #else
         VoxtralServiceError.unavailable.localizedDescription
+#endif
+    }
+
+    func currentSelectedModelID() -> String {
+#if canImport(VoxtralCore)
+        selectedModelID
+#else
+        ""
+#endif
+    }
+
+    func availableModels() -> [VoxtralModelOption] {
+#if canImport(VoxtralCore)
+        return Self.availableModelInfos().map { info in
+            VoxtralModelOption(id: info.id, title: info.name, sizeLabel: info.size, description: info.description)
+        }
+#else
+        return []
+#endif
+    }
+
+    func downloadedModels() -> [VoxtralModelOption] {
+#if canImport(VoxtralCore)
+        return Self.availableModelInfos().filter { info in
+            ModelDownloader.findModelPath(for: info) != nil
+        }.map { info in
+            VoxtralModelOption(id: info.id, title: info.name, sizeLabel: info.size, description: info.description)
+        }
+#else
+        return []
+#endif
+    }
+
+    func isModelDownloaded(_ id: String) -> Bool {
+#if canImport(VoxtralCore)
+        guard let info = Self.modelInfo(for: id) else { return false }
+        return ModelDownloader.findModelPath(for: info) != nil
+#else
+        false
+#endif
+    }
+
+    func setSelectedModel(_ id: String) {
+#if canImport(VoxtralCore)
+        guard Self.modelInfo(for: id) != nil else { return }
+        if selectedModelID == id { return }
+        selectedModelID = id
+        UserDefaults.standard.set(id, forKey: selectedModelDefaultsKey)
+        unload()
+#endif
+    }
+
+    func downloadModel(
+        _ id: String,
+        progress: (@Sendable (Double, String) -> Void)? = nil
+    ) async throws {
+#if canImport(VoxtralCore)
+        guard let info = Self.modelInfo(for: id) else {
+            throw VoxtralServiceError.modelNotConfigured
+        }
+        _ = try await ModelDownloader.download(info, progress: progress)
+#else
+        throw VoxtralServiceError.unavailable
+#endif
+    }
+
+    func removeModel(_ id: String) throws {
+#if canImport(VoxtralCore)
+        guard let info = Self.modelInfo(for: id) else {
+            throw VoxtralServiceError.modelNotConfigured
+        }
+
+        if id == selectedModelID {
+            unload()
+        }
+        try ModelDownloader.deleteModel(info)
+#else
+        throw VoxtralServiceError.unavailable
 #endif
     }
 
@@ -69,19 +173,42 @@ actor VoxtralService {
 #if canImport(VoxtralCore)
         pipeline?.unload()
         pipeline = nil
+        loadedModelID = nil
         lastErrorMessage = nil
 #endif
     }
 
 #if canImport(VoxtralCore)
+    private static func availableModelInfos() -> [VoxtralModelInfo] {
+        // Keep scope practical for local usage: Mini family only (full + quantized).
+        ModelRegistry.models.filter { $0.parameters == "3B" }
+    }
+
+    private static func modelInfo(for id: String) -> VoxtralModelInfo? {
+        availableModelInfos().first(where: { $0.id == id })
+    }
+
+    private static func pipelineModel(for id: String) -> VoxtralPipeline.Model? {
+        switch id {
+        case "mini-3b":
+            return .mini3b
+        case "mini-3b-8bit":
+            return .mini3b8bit
+        case "mini-3b-4bit":
+            return .mini3b4bit
+        default:
+            return nil
+        }
+    }
+
     private func loadPipelineIfNeeded() async throws -> VoxtralPipeline {
-        if let pipeline {
+        if let pipeline, loadedModelID == selectedModelID {
             return pipeline
         }
 
         while isLoadingModel {
             try await Task.sleep(nanoseconds: 100_000_000)
-            if let pipeline {
+            if let pipeline, loadedModelID == selectedModelID {
                 return pipeline
             }
         }
@@ -89,12 +216,16 @@ actor VoxtralService {
         isLoadingModel = true
         defer { isLoadingModel = false }
 
+        guard let pipelineModel = Self.pipelineModel(for: selectedModelID) else {
+            throw VoxtralServiceError.modelNotConfigured
+        }
+
         var config = VoxtralPipeline.Configuration.default
         config.temperature = 0
         config.maxTokens = 500
 
         let newPipeline = VoxtralPipeline(
-            model: .mini3b8bit,
+            model: pipelineModel,
             backend: .mlx,
             configuration: config
         )
@@ -102,6 +233,7 @@ actor VoxtralService {
         do {
             try await loadModelWithSingleRetry(newPipeline)
             pipeline = newPipeline
+            loadedModelID = selectedModelID
             lastErrorMessage = nil
             return newPipeline
         } catch {
