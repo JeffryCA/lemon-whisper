@@ -83,7 +83,7 @@ final class LemonWhisperController: ObservableObject {
             selectedBackend = backend
         }
 
-        requestMicrophonePermission()
+        logMicrophonePermissionState()
         requestAccessibilityPermission()
         setupHotKeys()
         setupHotKeyObservers()
@@ -101,12 +101,41 @@ final class LemonWhisperController: ObservableObject {
             recorder.stopRecording()
             RecordingPulseHUD.shared.showPulse(isRecording: false)
             transcribeLatestRecording()
-        } else {
+            isRecording = false
+            return
+        }
+
+        startRecordingIfPermitted()
+    }
+
+    private func startRecordingIfPermitted() {
+        let status = AVCaptureDevice.authorizationStatus(for: .audio)
+        switch status {
+        case .authorized:
             capturePasteTargetApp()
             recorder.startRecording()
             RecordingPulseHUD.shared.showPulse(isRecording: true)
+            isRecording = true
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
+                guard let self else { return }
+                DispatchQueue.main.async {
+                    if granted {
+                        print("✅ Microphone permission granted")
+                        self.capturePasteTargetApp()
+                        self.recorder.startRecording()
+                        RecordingPulseHUD.shared.showPulse(isRecording: true)
+                        self.isRecording = true
+                    } else {
+                        print("❌ Microphone permission denied")
+                    }
+                }
+            }
+        case .denied, .restricted:
+            print("❌ Microphone permission denied")
+        @unknown default:
+            print("⚠️ Unknown microphone permission status")
         }
-        isRecording.toggle()
     }
 
     private func transcribeLatestRecording() {
@@ -421,13 +450,16 @@ final class LemonWhisperController: ObservableObject {
         processMemoryMB = currentProcessMemoryMB()
     }
 
-    private func requestMicrophonePermission() {
-        AVCaptureDevice.requestAccess(for: .audio) { granted in
-            if granted {
-                print("✅ Microphone permission granted")
-            } else {
-                print("❌ Microphone permission denied")
-            }
+    private func logMicrophonePermissionState() {
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized:
+            print("✅ Microphone permission granted")
+        case .notDetermined:
+            print("ℹ️ Microphone permission not determined yet")
+        case .denied, .restricted:
+            print("❌ Microphone permission denied")
+        @unknown default:
+            print("⚠️ Unknown microphone permission status")
         }
     }
 
@@ -493,10 +525,8 @@ final class RecordingPulseHUD {
             : NSColor(calibratedWhite: 0.72, alpha: 0.95)
         dotView.layer?.backgroundColor = pulseColor.cgColor
 
-        if let screen = activeScreen() {
-            let x = screen.frame.midX - (dotSize / 2)
-            let y = screen.frame.minY + (screen.frame.height * 0.75)
-            panel.setFrame(NSRect(x: x, y: y, width: dotSize, height: dotSize), display: false)
+        if let point = pointerPosition() {
+            panel.setFrameOrigin(NSPoint(x: point.x - (dotSize / 2), y: point.y + 18))
         }
 
         panel.alphaValue = 0
@@ -546,12 +576,9 @@ final class RecordingPulseHUD {
         self.dotView = dotView
     }
 
-    private func activeScreen() -> NSScreen? {
-        let mouse = NSEvent.mouseLocation
-        if let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) {
-            return screen
-        }
-        return NSScreen.main ?? NSScreen.screens.first
+    private func pointerPosition() -> NSPoint? {
+        let point = NSEvent.mouseLocation
+        return point.x.isFinite && point.y.isFinite ? point : nil
     }
 }
 
