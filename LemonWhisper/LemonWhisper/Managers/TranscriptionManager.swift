@@ -4,6 +4,22 @@ import Carbon
 import AppKit
 import ApplicationServices
 
+enum TranscriptionBackend: String, CaseIterable, Identifiable {
+    case whisper
+    case voxtralMini3B8Bit
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .whisper:
+            return "Whisper (large-v3-turbo)"
+        case .voxtralMini3B8Bit:
+            return "Voxtral Mini 3B (8-bit)"
+        }
+    }
+}
+
 class TranscriptionManager {
     static let shared = TranscriptionManager()
 
@@ -12,6 +28,7 @@ class TranscriptionManager {
         language: String = "en",
         prompt: String? = nil,
         isLiveMode: Bool = false,
+        backend: TranscriptionBackend = .whisper,
         completion: @escaping (String) -> Void
     ) {
         Task {
@@ -30,20 +47,22 @@ class TranscriptionManager {
                 let sampleCount = Int(buffer.frameLength)
                 let samples = Array(UnsafeBufferPointer(start: channelPtr, count: sampleCount))
 
-                guard let ctx = WhisperContext.getShared() else {
-                    print("❌ Whisper context not initialized")
-                    completion("Transcription failed.")
-                    return
-                }
+                switch backend {
+                case .whisper:
+                    let ctx = try await ensureWhisperContextLoaded()
 
-                let ok = await ctx.fullTranscribe(
-                    samples: samples,
-                    language: language,
-                    prompt: prompt,
-                    isLiveMode: isLiveMode
-                )
-                let result = ok ? await ctx.getTranscription().trimmingCharacters(in: .whitespacesAndNewlines) : "Transcription failed."
-                completion(result)
+                    let ok = await ctx.fullTranscribe(
+                        samples: samples,
+                        language: language,
+                        prompt: prompt,
+                        isLiveMode: isLiveMode
+                    )
+                    let result = ok ? await ctx.getTranscription().trimmingCharacters(in: .whitespacesAndNewlines) : "Transcription failed."
+                    completion(result)
+                case .voxtralMini3B8Bit:
+                    let text = try await VoxtralService.shared.transcribe(audioURL: tempURL, language: language)
+                    completion(text.trimmingCharacters(in: .whitespacesAndNewlines))
+                }
             } catch {
                 print("❌ Error during transcription: \(error)")
                 completion("Transcription failed.")
@@ -54,37 +73,41 @@ class TranscriptionManager {
     func transcribe(
         from url: URL,
         language: String = "en",
+        backend: TranscriptionBackend,
         targetBundleIdentifier: String?,
         targetProcessID: pid_t?
     ) {
         Task {
             do {
-                let file = try AVAudioFile(forReading: url)
-                let totalFrames = Int(file.length)
-                guard
-                    let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat,
-                                                  frameCapacity: AVAudioFrameCount(totalFrames))
-                else { throw NSError(domain: "BufferFail", code: -1) }
-                try file.read(into: buffer)
+                let result: String
+                switch backend {
+                case .whisper:
+                    let file = try AVAudioFile(forReading: url)
+                    let totalFrames = Int(file.length)
+                    guard
+                        let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat,
+                                                      frameCapacity: AVAudioFrameCount(totalFrames))
+                    else { throw NSError(domain: "BufferFail", code: -1) }
+                    try file.read(into: buffer)
 
-                // Down‑mix to mono if needed
-                guard let floatData = buffer.floatChannelData else { throw NSError(domain: "NoData", code: -2) }
-                let channelPtr = floatData[0]   // assuming mono
-                let sampleCount = Int(buffer.frameLength)
-                let samples = Array(UnsafeBufferPointer(start: channelPtr, count: sampleCount))
+                    guard let floatData = buffer.floatChannelData else { throw NSError(domain: "NoData", code: -2) }
+                    let channelPtr = floatData[0]
+                    let sampleCount = Int(buffer.frameLength)
+                    let samples = Array(UnsafeBufferPointer(start: channelPtr, count: sampleCount))
 
-                guard let ctx = WhisperContext.getShared() else {
-                    print("❌ Whisper context not initialized")
-                    return
+                    let ctx = try await ensureWhisperContextLoaded()
+
+                    let ok = await ctx.fullTranscribe(
+                        samples: samples,
+                        language: language,
+                        prompt: nil,
+                        isLiveMode: false
+                    )
+                    result = ok ? await ctx.getTranscription().trimmingCharacters(in: .whitespacesAndNewlines) : "Transcription failed."
+                case .voxtralMini3B8Bit:
+                    result = try await VoxtralService.shared.transcribe(audioURL: url, language: language)
                 }
 
-                let ok = await ctx.fullTranscribe(
-                    samples: samples,
-                    language: language,
-                    prompt: nil,
-                    isLiveMode: false
-                )
-                let result = ok ? await ctx.getTranscription().trimmingCharacters(in: .whitespacesAndNewlines) : "Transcription failed."
                 copyAndPaste(
                     result,
                     targetBundleIdentifier: targetBundleIdentifier,
@@ -243,5 +266,21 @@ class TranscriptionManager {
         }
 
         return false
+    }
+
+    private func ensureWhisperContextLoaded() async throws -> WhisperContext {
+        if let existing = WhisperContext.getShared() {
+            return existing
+        }
+
+        guard let modelPath = Bundle.main.path(forResource: "ggml-large-v3-turbo", ofType: "bin") else {
+            throw NSError(domain: "WhisperModelMissing", code: -1001)
+        }
+
+        let context = try await WhisperContext.createContext(path: modelPath)
+        if let vadPath = Bundle.main.path(forResource: "ggml-silero-v5.1.2", ofType: "bin") {
+            await context.setVADModelPath(vadPath)
+        }
+        return context
     }
 }

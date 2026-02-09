@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		643AE2282E33BEC90097908D /* whisper.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 643AE2272E33BEC90097908D /* whisper.xcframework */; };
 		643AE2292E33BEC90097908D /* whisper.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 643AE2272E33BEC90097908D /* whisper.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		64F0A0032E5000010097908D /* VoxtralCore in Frameworks */ = {isa = PBXBuildFile; productRef = 64F0A0022E5000010097908D /* VoxtralCore */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -86,6 +87,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				64F0A0032E5000010097908D /* VoxtralCore in Frameworks */,
 				643AE2282E33BEC90097908D /* whisper.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -166,6 +168,7 @@
 			);
 			name = LemonWhisper;
 			packageProductDependencies = (
+				64F0A0022E5000010097908D /* VoxtralCore */,
 			);
 			productName = LemonWhisper;
 			productReference = 64B79E022E31F52A00096BEF /* LemonWhisper.app */;
@@ -249,6 +252,9 @@
 			);
 			mainGroup = 64B79DF92E31F52A00096BEF;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				64F0A0012E5000010097908D /* XCRemoteSwiftPackageReference "mlx-voxtral-swift" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 64B79E032E31F52A00096BEF /* Products */;
 			projectDirPath = "";
@@ -573,7 +579,7 @@
 				64B79E232E31F52C00096BEF /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Debug;
 		};
 		64B79E242E31F52C00096BEF /* Build configuration list for PBXNativeTarget "LemonWhisper" */ = {
 			isa = XCConfigurationList;
@@ -582,7 +588,7 @@
 				64B79E262E31F52C00096BEF /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Debug;
 		};
 		64B79E272E31F52C00096BEF /* Build configuration list for PBXNativeTarget "LemonWhisperTests" */ = {
 			isa = XCConfigurationList;
@@ -591,7 +597,7 @@
 				64B79E292E31F52C00096BEF /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Debug;
 		};
 		64B79E2A2E31F52C00096BEF /* Build configuration list for PBXNativeTarget "LemonWhisperUITests" */ = {
 			isa = XCConfigurationList;
@@ -600,9 +606,28 @@
 				64B79E2C2E31F52C00096BEF /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		64F0A0012E5000010097908D /* XCRemoteSwiftPackageReference "mlx-voxtral-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/VincentGourbin/mlx-voxtral-swift";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		64F0A0022E5000010097908D /* VoxtralCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 64F0A0012E5000010097908D /* XCRemoteSwiftPackageReference "mlx-voxtral-swift" */;
+			productName = VoxtralCore;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 64B79DFA2E31F52A00096BEF /* Project object */;
 }

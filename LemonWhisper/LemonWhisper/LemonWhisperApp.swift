@@ -3,6 +3,7 @@ import AVFoundation
 import ApplicationServices
 import Carbon
 import AppKit
+import Darwin
 
 extension Notification.Name {
     static let toggleRecordingHotKey = Notification.Name("toggleRecordingHotKey")
@@ -23,11 +24,15 @@ private func hotKeyHandler(
 final class LemonWhisperController: ObservableObject {
     @Published var isRecording = false
     @Published var selectedLanguageCode = "en"
+    @Published var selectedBackend: TranscriptionBackend = .whisper
+    @Published var isPreparingVoxtral = false
+    @Published var processMemoryMB: Int = 0
 
     private let recorder = AudioRecorder()
     private var targetBundleIdentifier: String?
     private var targetProcessID: pid_t?
     private var toggleHotKeyRef: EventHotKeyRef?
+    private var statusTimer: Timer?
 
     struct LanguageOption: Identifiable {
         let id: String
@@ -50,11 +55,16 @@ final class LemonWhisperController: ObservableObject {
     ]
 
     init() {
+        if let storedBackend = UserDefaults.standard.string(forKey: "selectedTranscriptionBackend"),
+           let backend = TranscriptionBackend(rawValue: storedBackend) {
+            selectedBackend = backend
+        }
         requestMicrophonePermission()
         requestAccessibilityPermission()
         setupHotKeys()
         setupHotKeyObservers()
-        preloadWhisperModel()
+        preloadCurrentBackend()
+        startStatusPolling()
     }
 
     func toggleRecording() {
@@ -75,9 +85,26 @@ final class LemonWhisperController: ObservableObject {
         TranscriptionManager.shared.transcribe(
             from: wavURL,
             language: selectedLanguageCode,
+            backend: selectedBackend,
             targetBundleIdentifier: targetBundleIdentifier,
             targetProcessID: targetProcessID
         )
+    }
+
+    func setBackend(_ backend: TranscriptionBackend) {
+        switch backend {
+        case .whisper:
+            selectedBackend = .whisper
+            UserDefaults.standard.set(TranscriptionBackend.whisper.rawValue, forKey: "selectedTranscriptionBackend")
+            Task {
+                await VoxtralService.shared.unload()
+            }
+            preloadCurrentBackend()
+        case .voxtralMini3B8Bit:
+            Task { @MainActor in
+                await prepareAndMaybeSwitchToVoxtral()
+            }
+        }
     }
 
     private func capturePasteTargetApp() {
@@ -91,25 +118,94 @@ final class LemonWhisperController: ObservableObject {
         }
     }
 
-    private func preloadWhisperModel() {
-        Task {
-            do {
-                guard let modelPath = Bundle.main.path(forResource: "ggml-large-v3-turbo", ofType: "bin") else {
-                    print("❌ Whisper model not found in bundle resources")
-                    return
-                }
-                let context = try await WhisperContext.createContext(path: modelPath)
+    private func preloadCurrentBackend() {
+        switch selectedBackend {
+        case .whisper:
+            Task {
+                do {
+                    guard let modelPath = Bundle.main.path(forResource: "ggml-large-v3-turbo", ofType: "bin") else {
+                        print("❌ Whisper model not found in bundle resources")
+                        return
+                    }
+                    let context = try await WhisperContext.createContext(path: modelPath)
 
-                if let vadPath = Bundle.main.path(forResource: "ggml-silero-v5.1.2", ofType: "bin") {
-                    await context.setVADModelPath(vadPath)
-                    print("✅ VAD model enabled")
-                } else {
-                    print("⚠️ VAD model not found in bundle resources")
+                    if let vadPath = Bundle.main.path(forResource: "ggml-silero-v5.1.2", ofType: "bin") {
+                        await context.setVADModelPath(vadPath)
+                        print("✅ VAD model enabled")
+                    } else {
+                        print("⚠️ VAD model not found in bundle resources")
+                    }
+                } catch {
+                    print("❌ Failed to load Whisper model: \(error)")
                 }
-            } catch {
-                print("❌ Failed to load Whisper model: \(error)")
+            }
+        case .voxtralMini3B8Bit:
+            Task {
+                await prepareAndMaybeSwitchToVoxtral()
             }
         }
+    }
+
+    private func prepareAndMaybeSwitchToVoxtral() async {
+        if isPreparingVoxtral {
+            return
+        }
+
+        if await VoxtralService.shared.isReady {
+            selectedBackend = .voxtralMini3B8Bit
+            UserDefaults.standard.set(TranscriptionBackend.voxtralMini3B8Bit.rawValue, forKey: "selectedTranscriptionBackend")
+            print("✅ Voxtral is ready. Switched model.")
+            return
+        }
+
+        isPreparingVoxtral = true
+        print("⏳ Preparing Voxtral in background. Staying on Whisper until ready.")
+        defer { isPreparingVoxtral = false }
+
+        do {
+            try await VoxtralService.shared.warmupModel()
+            selectedBackend = .voxtralMini3B8Bit
+            UserDefaults.standard.set(TranscriptionBackend.voxtralMini3B8Bit.rawValue, forKey: "selectedTranscriptionBackend")
+            print("✅ Voxtral ready. Model switched to Voxtral Mini 3B (8-bit).")
+        } catch {
+            selectedBackend = .whisper
+            UserDefaults.standard.set(TranscriptionBackend.whisper.rawValue, forKey: "selectedTranscriptionBackend")
+            if let details = await VoxtralService.shared.latestError {
+                print("❌ Voxtral preparation failed. Staying on Whisper: \(details)")
+            } else {
+                print("❌ Voxtral preparation failed. Staying on Whisper: \(error.localizedDescription)")
+            }
+            Task {
+                await VoxtralService.shared.unload()
+            }
+        }
+    }
+
+    var voxtralMenuTitle: String {
+        if selectedBackend == .voxtralMini3B8Bit {
+            return "Voxtral Mini 3B (8-bit)"
+        }
+        if isPreparingVoxtral {
+            return "Voxtral Mini 3B (8-bit) (Preparing...)"
+        }
+        return "Voxtral Mini 3B (8-bit)"
+    }
+
+    var canSelectVoxtralNow: Bool {
+        !isPreparingVoxtral
+    }
+
+    private func startStatusPolling() {
+        refreshRuntimeStatus()
+        statusTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.refreshRuntimeStatus()
+            }
+        }
+    }
+
+    private func refreshRuntimeStatus() {
+        processMemoryMB = currentProcessMemoryMB()
     }
 
     private func requestMicrophonePermission() {
@@ -252,12 +348,6 @@ struct LemonWhisperApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            Text(controller.isRecording ? "Status: Recording" : "Status: Idle")
-                .font(.caption)
-                .foregroundStyle(controller.isRecording ? .red : .secondary)
-
-            Divider()
-
             Button(controller.isRecording ? "Stop Recording" : "Start Recording (Ctrl+Y)") {
                 controller.toggleRecording()
             }
@@ -279,6 +369,31 @@ struct LemonWhisperApp: App {
                 }
             }
 
+            Menu("Model") {
+                ForEach(TranscriptionBackend.allCases) { backend in
+                    Button {
+                        controller.setBackend(backend)
+                    } label: {
+                        if backend == .voxtralMini3B8Bit {
+                            if controller.selectedBackend == backend {
+                                Text("✓ \(controller.voxtralMenuTitle)")
+                            } else {
+                                Text(controller.voxtralMenuTitle)
+                            }
+                        } else if controller.selectedBackend == backend {
+                            Text("✓ \(backend.title)")
+                        } else {
+                            Text(backend.title)
+                        }
+                    }
+                    .disabled(backend == .voxtralMini3B8Bit && !controller.canSelectVoxtralNow)
+                }
+            }
+
+            Divider()
+            Text("Process memory: \(controller.processMemoryMB) MB")
+                .font(.caption2)
+
             Button("Quit LemonWhisper") {
                 NSApplication.shared.terminate(nil)
             }
@@ -287,4 +402,16 @@ struct LemonWhisperApp: App {
                 .renderingMode(.original)
         }
     }
+}
+
+private func currentProcessMemoryMB() -> Int {
+    var info = task_vm_info_data_t()
+    var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+    let result = withUnsafeMutablePointer(to: &info) {
+        $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+            task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+        }
+    }
+    guard result == KERN_SUCCESS else { return 0 }
+    return Int(info.phys_footprint / 1_048_576)
 }
