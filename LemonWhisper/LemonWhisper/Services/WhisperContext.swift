@@ -165,6 +165,10 @@ actor WhisperContext {
     static func getShared() -> WhisperContext? {
         return WhisperContext.shared
     }
+
+    static func clearShared() {
+        WhisperContext.shared = nil
+    }
 }
 
 fileprivate func cpuCount() -> Int {

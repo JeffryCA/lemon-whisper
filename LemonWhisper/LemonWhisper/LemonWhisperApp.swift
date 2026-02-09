@@ -28,6 +28,19 @@ final class LemonWhisperController: ObservableObject {
     @Published var isPreparingVoxtral = false
     @Published var processMemoryMB: Int = 0
 
+    @Published var selectedWhisperModelID: String = WhisperModelCatalog.selectedModelID()
+    @Published var selectedVoxtralModelID: String = ""
+    @Published var downloadedWhisperModels: [WhisperModelOption] = []
+    @Published var downloadedVoxtralModels: [VoxtralModelOption] = []
+
+    @Published var whisperStatus: String?
+    @Published var voxtralStatus: String?
+    @Published var whisperDownloadProgress: [String: Double] = [:]
+    @Published var voxtralDownloadProgress: [String: Double] = [:]
+
+    private var whisperOperationsInFlight: Set<String> = []
+    private var voxtralOperationsInFlight: Set<String> = []
+
     private let recorder = AudioRecorder()
     private var targetBundleIdentifier: String?
     private var targetProcessID: pid_t?
@@ -54,17 +67,33 @@ final class LemonWhisperController: ObservableObject {
         LanguageOption(id: "zh", title: "Chinese")
     ]
 
+    var whisperCatalog: [WhisperModelOption] {
+        WhisperModelCatalog.models
+    }
+
+    var voxtralCatalog: [VoxtralModelOption] {
+        get async {
+            await VoxtralService.shared.availableModels()
+        }
+    }
+
     init() {
         if let storedBackend = UserDefaults.standard.string(forKey: "selectedTranscriptionBackend"),
            let backend = TranscriptionBackend(rawValue: storedBackend) {
             selectedBackend = backend
         }
+
         requestMicrophonePermission()
         requestAccessibilityPermission()
         setupHotKeys()
         setupHotKeyObservers()
-        preloadCurrentBackend()
         startStatusPolling()
+
+        Task { @MainActor in
+            WhisperModelCatalog.cleanupInterruptedDownloads()
+            await VoxtralService.shared.cleanupInterruptedDownloads()
+            await initializeModelsAndBackend()
+        }
     }
 
     func toggleRecording() {
@@ -99,12 +128,168 @@ final class LemonWhisperController: ObservableObject {
             Task {
                 await VoxtralService.shared.unload()
             }
-            preloadCurrentBackend()
-        case .voxtralMini3B8Bit:
+            preloadWhisperIfNeeded()
+        case .voxtral:
             Task { @MainActor in
                 await prepareAndMaybeSwitchToVoxtral()
             }
         }
+    }
+
+    func selectDownloadedWhisperModelAndActivate(_ id: String) {
+        selectWhisperModel(id)
+        setBackend(.whisper)
+    }
+
+    func selectDownloadedVoxtralModelAndActivate(_ id: String) {
+        Task { @MainActor in
+            await selectVoxtralModel(id)
+            setBackend(.voxtral)
+        }
+    }
+
+    func selectWhisperModel(_ id: String) {
+        guard WhisperModelCatalog.option(for: id) != nil else { return }
+        selectedWhisperModelID = id
+        WhisperModelCatalog.setSelectedModelID(id)
+        WhisperContext.clearShared()
+    }
+
+    func selectVoxtralModel(_ id: String) async {
+        await VoxtralService.shared.setSelectedModel(id)
+        selectedVoxtralModelID = await VoxtralService.shared.currentSelectedModelID()
+    }
+
+    func downloadWhisperModel(_ id: String) {
+        guard !whisperOperationsInFlight.contains(id),
+              let option = WhisperModelCatalog.option(for: id) else {
+            return
+        }
+
+        whisperOperationsInFlight.insert(id)
+        whisperDownloadProgress[id] = 0
+        whisperStatus = "Downloading \(option.title)..."
+
+        Task { @MainActor in
+            defer {
+                whisperOperationsInFlight.remove(id)
+                whisperDownloadProgress[id] = nil
+            }
+
+            do {
+                try await WhisperModelCatalog.downloadModel(option) { progress in
+                    Task { @MainActor in
+                        self.whisperDownloadProgress[id] = progress
+                    }
+                }
+                whisperStatus = "Downloaded \(option.title)"
+                refreshWhisperDownloads()
+                if selectedWhisperModelID == id {
+                    WhisperContext.clearShared()
+                }
+            } catch {
+                whisperStatus = "Whisper download failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func removeWhisperModel(_ id: String) {
+        guard !whisperOperationsInFlight.contains(id),
+              let option = WhisperModelCatalog.option(for: id) else {
+            return
+        }
+
+        whisperOperationsInFlight.insert(id)
+        defer { whisperOperationsInFlight.remove(id) }
+
+        do {
+            try WhisperModelCatalog.removeModel(option)
+            whisperStatus = "Removed \(option.title)"
+            refreshWhisperDownloads()
+
+            if selectedWhisperModelID == id {
+                if let fallback = downloadedWhisperModels.first {
+                    selectWhisperModel(fallback.id)
+                }
+                WhisperContext.clearShared()
+            }
+        } catch {
+            whisperStatus = "Could not remove \(option.title): \(error.localizedDescription)"
+        }
+    }
+
+    func downloadVoxtralModel(_ id: String) {
+        guard !voxtralOperationsInFlight.contains(id) else { return }
+        voxtralOperationsInFlight.insert(id)
+        voxtralDownloadProgress[id] = 0
+        voxtralStatus = "Downloading Voxtral model..."
+
+        Task { @MainActor in
+            defer {
+                voxtralOperationsInFlight.remove(id)
+                voxtralDownloadProgress[id] = nil
+            }
+
+            do {
+                try await VoxtralService.shared.downloadModel(id) { progress, status in
+                    let pct = Int(progress * 100)
+                    Task { @MainActor in
+                        self.voxtralDownloadProgress[id] = progress
+                        self.voxtralStatus = "[\(pct)%] \(status)"
+                    }
+                }
+                voxtralStatus = "Voxtral model downloaded"
+                await refreshVoxtralDownloads()
+            } catch {
+                voxtralStatus = "Voxtral download failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func removeVoxtralModel(_ id: String) {
+        guard !voxtralOperationsInFlight.contains(id) else { return }
+        voxtralOperationsInFlight.insert(id)
+        defer { voxtralOperationsInFlight.remove(id) }
+
+        Task { @MainActor in
+            do {
+                try await VoxtralService.shared.removeModel(id)
+                voxtralStatus = "Voxtral model removed"
+                await refreshVoxtralDownloads()
+
+                if selectedVoxtralModelID == id {
+                    if let fallback = downloadedVoxtralModels.first {
+                        await selectVoxtralModel(fallback.id)
+                    }
+                }
+            } catch {
+                voxtralStatus = "Could not remove Voxtral model: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func isWhisperModelDownloaded(_ id: String) -> Bool {
+        downloadedWhisperModels.contains(where: { $0.id == id })
+    }
+
+    func isVoxtralModelDownloaded(_ id: String) -> Bool {
+        downloadedVoxtralModels.contains(where: { $0.id == id })
+    }
+
+    func isWhisperBusy(_ id: String) -> Bool {
+        whisperOperationsInFlight.contains(id)
+    }
+
+    func isVoxtralBusy(_ id: String) -> Bool {
+        voxtralOperationsInFlight.contains(id)
+    }
+
+    func whisperProgress(_ id: String) -> Double? {
+        whisperDownloadProgress[id]
+    }
+
+    func voxtralProgress(_ id: String) -> Double? {
+        voxtralDownloadProgress[id]
     }
 
     private func capturePasteTargetApp() {
@@ -118,30 +303,57 @@ final class LemonWhisperController: ObservableObject {
         }
     }
 
-    private func preloadCurrentBackend() {
+    private func initializeModelsAndBackend() async {
+        selectedWhisperModelID = WhisperModelCatalog.selectedModelID()
+        selectedVoxtralModelID = await VoxtralService.shared.currentSelectedModelID()
+
+        refreshWhisperDownloads()
+        await refreshVoxtralDownloads()
+
+        if downloadedWhisperModels.isEmpty,
+           let defaultOption = WhisperModelCatalog.option(for: WhisperModelCatalog.defaultModelID) {
+            whisperStatus = "No Whisper model found locally. Downloading default model..."
+            downloadWhisperModel(defaultOption.id)
+        }
+
         switch selectedBackend {
         case .whisper:
-            Task {
-                do {
-                    guard let modelPath = Bundle.main.path(forResource: "ggml-large-v3-turbo", ofType: "bin") else {
-                        print("❌ Whisper model not found in bundle resources")
-                        return
-                    }
-                    let context = try await WhisperContext.createContext(path: modelPath)
+            preloadWhisperIfNeeded()
+        case .voxtral:
+            await prepareAndMaybeSwitchToVoxtral()
+        }
+    }
 
-                    if let vadPath = Bundle.main.path(forResource: "ggml-silero-v5.1.2", ofType: "bin") {
-                        await context.setVADModelPath(vadPath)
-                        print("✅ VAD model enabled")
-                    } else {
-                        print("⚠️ VAD model not found in bundle resources")
-                    }
-                } catch {
-                    print("❌ Failed to load Whisper model: \(error)")
+    private func refreshWhisperDownloads() {
+        downloadedWhisperModels = WhisperModelCatalog.downloadedModels()
+
+        if !downloadedWhisperModels.contains(where: { $0.id == selectedWhisperModelID }),
+           let fallback = downloadedWhisperModels.first {
+            selectWhisperModel(fallback.id)
+        }
+    }
+
+    private func refreshVoxtralDownloads() async {
+        downloadedVoxtralModels = await VoxtralService.shared.downloadedModels()
+        selectedVoxtralModelID = await VoxtralService.shared.currentSelectedModelID()
+    }
+
+    private func preloadWhisperIfNeeded() {
+        Task {
+            do {
+                guard let selected = WhisperModelCatalog.selectedModelIfDownloaded() else {
+                    print("❌ No downloaded Whisper model available")
+                    return
                 }
-            }
-        case .voxtralMini3B8Bit:
-            Task {
-                await prepareAndMaybeSwitchToVoxtral()
+
+                _ = try await WhisperContext.createContext(path: selected.localURL.path)
+                try await WhisperModelCatalog.ensureVADDownloadedIfNeeded()
+                if let context = WhisperContext.getShared() {
+                    await context.setVADModelPath(WhisperModelCatalog.vadLocalURL.path)
+                }
+                print("✅ Whisper model ready: \(selected.title)")
+            } catch {
+                print("❌ Failed to load Whisper model: \(error)")
             }
         }
     }
@@ -151,10 +363,17 @@ final class LemonWhisperController: ObservableObject {
             return
         }
 
+        guard downloadedVoxtralModels.contains(where: { $0.id == selectedVoxtralModelID }) else {
+            selectedBackend = .whisper
+            UserDefaults.standard.set(TranscriptionBackend.whisper.rawValue, forKey: "selectedTranscriptionBackend")
+            voxtralStatus = "Selected Voxtral model is not downloaded. Staying on Whisper."
+            return
+        }
+
         if await VoxtralService.shared.isReady {
-            selectedBackend = .voxtralMini3B8Bit
-            UserDefaults.standard.set(TranscriptionBackend.voxtralMini3B8Bit.rawValue, forKey: "selectedTranscriptionBackend")
-            print("✅ Voxtral is ready. Switched model.")
+            selectedBackend = .voxtral
+            UserDefaults.standard.set(TranscriptionBackend.voxtral.rawValue, forKey: "selectedTranscriptionBackend")
+            print("✅ Voxtral is ready. Switched backend.")
             return
         }
 
@@ -164,9 +383,9 @@ final class LemonWhisperController: ObservableObject {
 
         do {
             try await VoxtralService.shared.warmupModel()
-            selectedBackend = .voxtralMini3B8Bit
-            UserDefaults.standard.set(TranscriptionBackend.voxtralMini3B8Bit.rawValue, forKey: "selectedTranscriptionBackend")
-            print("✅ Voxtral ready. Model switched to Voxtral Mini 3B (8-bit).")
+            selectedBackend = .voxtral
+            UserDefaults.standard.set(TranscriptionBackend.voxtral.rawValue, forKey: "selectedTranscriptionBackend")
+            print("✅ Voxtral ready. Switched backend.")
         } catch {
             selectedBackend = .whisper
             UserDefaults.standard.set(TranscriptionBackend.whisper.rawValue, forKey: "selectedTranscriptionBackend")
@@ -175,20 +394,8 @@ final class LemonWhisperController: ObservableObject {
             } else {
                 print("❌ Voxtral preparation failed. Staying on Whisper: \(error.localizedDescription)")
             }
-            Task {
-                await VoxtralService.shared.unload()
-            }
+            await VoxtralService.shared.unload()
         }
-    }
-
-    var voxtralMenuTitle: String {
-        if selectedBackend == .voxtralMini3B8Bit {
-            return "Voxtral Mini 3B (8-bit)"
-        }
-        if isPreparingVoxtral {
-            return "Voxtral Mini 3B (8-bit) (Preparing...)"
-        }
-        return "Voxtral Mini 3B (8-bit)"
     }
 
     var canSelectVoxtralNow: Bool {
@@ -226,7 +433,7 @@ final class LemonWhisperController: ObservableObject {
     }
 
     private func setupHotKeys() {
-        let keyCodeGermanY: UInt32 = UInt32(kVK_ANSI_Z) // "Y" on German keyboard layout
+        let keyCodeGermanY: UInt32 = UInt32(kVK_ANSI_Z)
         let modifiers: UInt32 = UInt32(controlKey)
 
         let toggleHotKeyID = EventHotKeyID(signature: OSType(32), id: 1)
@@ -342,61 +549,98 @@ final class RecordingPulseHUD {
     }
 }
 
+private struct MenuBarContentView: View {
+    @ObservedObject var controller: LemonWhisperController
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Button(controller.isRecording ? "Stop Recording" : "Start Recording (Ctrl+Y)") {
+            controller.toggleRecording()
+        }
+        .keyboardShortcut("y", modifiers: [.control])
+
+        Divider()
+
+        Menu("Language") {
+            ForEach(controller.languageOptions) { option in
+                Button {
+                    controller.selectedLanguageCode = option.id
+                } label: {
+                    if controller.selectedLanguageCode == option.id {
+                        Text("✓ \(option.title)")
+                    } else {
+                        Text(option.title)
+                    }
+                }
+            }
+        }
+
+        Menu("Model") {
+            Section("Downloaded Whisper") {
+                if controller.downloadedWhisperModels.isEmpty {
+                    Text("No Whisper models downloaded")
+                } else {
+                    ForEach(controller.downloadedWhisperModels) { option in
+                        Button {
+                            controller.selectDownloadedWhisperModelAndActivate(option.id)
+                        } label: {
+                            if controller.selectedBackend == .whisper && controller.selectedWhisperModelID == option.id {
+                                Text("✓ \(option.title)")
+                            } else {
+                                Text(option.title)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Section("Downloaded Voxtral") {
+                if controller.downloadedVoxtralModels.isEmpty {
+                    Text("No Voxtral models downloaded")
+                } else {
+                    ForEach(controller.downloadedVoxtralModels) { option in
+                        Button {
+                            controller.selectDownloadedVoxtralModelAndActivate(option.id)
+                        } label: {
+                            if controller.selectedBackend == .voxtral && controller.selectedVoxtralModelID == option.id {
+                                Text("✓ \(option.title)")
+                            } else {
+                                Text(option.title)
+                            }
+                        }
+                        .disabled(!controller.canSelectVoxtralNow)
+                    }
+                }
+            }
+        }
+
+        Divider()
+        Text("Process memory: \(controller.processMemoryMB) MB")
+            .font(.caption2)
+
+        Button("Open Lemon") {
+            openWindow(id: "open-lemon")
+            NSApp.activate(ignoringOtherApps: true)
+        }
+
+        Button("Quit LemonWhisper") {
+            NSApplication.shared.terminate(nil)
+        }
+    }
+}
+
 @main
 struct LemonWhisperApp: App {
     @StateObject private var controller = LemonWhisperController()
 
     var body: some Scene {
+        Window("Open Lemon", id: "open-lemon") {
+            ContentView(controller: controller)
+        }
+        .windowResizability(.contentSize)
+
         MenuBarExtra {
-            Button(controller.isRecording ? "Stop Recording" : "Start Recording (Ctrl+Y)") {
-                controller.toggleRecording()
-            }
-            .keyboardShortcut("y", modifiers: [.control])
-
-            Divider()
-
-            Menu("Language") {
-                ForEach(controller.languageOptions) { option in
-                    Button {
-                        controller.selectedLanguageCode = option.id
-                    } label: {
-                        if controller.selectedLanguageCode == option.id {
-                            Text("✓ \(option.title)")
-                        } else {
-                            Text(option.title)
-                        }
-                    }
-                }
-            }
-
-            Menu("Model") {
-                ForEach(TranscriptionBackend.allCases) { backend in
-                    Button {
-                        controller.setBackend(backend)
-                    } label: {
-                        if backend == .voxtralMini3B8Bit {
-                            if controller.selectedBackend == backend {
-                                Text("✓ \(controller.voxtralMenuTitle)")
-                            } else {
-                                Text(controller.voxtralMenuTitle)
-                            }
-                        } else if controller.selectedBackend == backend {
-                            Text("✓ \(backend.title)")
-                        } else {
-                            Text(backend.title)
-                        }
-                    }
-                    .disabled(backend == .voxtralMini3B8Bit && !controller.canSelectVoxtralNow)
-                }
-            }
-
-            Divider()
-            Text("Process memory: \(controller.processMemoryMB) MB")
-                .font(.caption2)
-
-            Button("Quit LemonWhisper") {
-                NSApplication.shared.terminate(nil)
-            }
+            MenuBarContentView(controller: controller)
         } label: {
             Image("MenuBarIcon")
                 .renderingMode(.original)
