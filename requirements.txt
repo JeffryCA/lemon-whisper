@@ -1,0 +1,8 @@
+sounddevice==0.5.2
+soundfile==0.13.1
+numpy==2.3.1
+pyperclip==1.9.0
+pynput==1.8.1
+python-dotenv==1.1.1
+torch==2.7.1
+torchaudio==2.7.1
