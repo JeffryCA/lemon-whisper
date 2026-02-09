@@ -7,7 +7,9 @@ import VoxtralCore
 struct VoxtralModelOption: Identifiable, Hashable {
     let id: String
     let title: String
-    let sizeLabel: String
+    let family: String
+    let downloadSizeLabel: String
+    let expectedPeakMemoryLabel: String
     let description: String
 }
 
@@ -83,7 +85,14 @@ actor VoxtralService {
     func availableModels() -> [VoxtralModelOption] {
 #if canImport(VoxtralCore)
         return Self.availableModelInfos().map { info in
-            VoxtralModelOption(id: info.id, title: info.name, sizeLabel: info.size, description: info.description)
+            VoxtralModelOption(
+                id: info.id,
+                title: info.name,
+                family: Self.familyLabel(for: info.id),
+                downloadSizeLabel: info.size,
+                expectedPeakMemoryLabel: Self.peakMemoryLabel(for: info.id),
+                description: info.description
+            )
         }
 #else
         return []
@@ -95,7 +104,14 @@ actor VoxtralService {
         return Self.availableModelInfos().filter { info in
             ModelDownloader.findModelPath(for: info) != nil
         }.map { info in
-            VoxtralModelOption(id: info.id, title: info.name, sizeLabel: info.size, description: info.description)
+            VoxtralModelOption(
+                id: info.id,
+                title: info.name,
+                family: Self.familyLabel(for: info.id),
+                downloadSizeLabel: info.size,
+                expectedPeakMemoryLabel: Self.peakMemoryLabel(for: info.id),
+                description: info.description
+            )
         }
 #else
         return []
@@ -129,9 +145,18 @@ actor VoxtralService {
         guard let info = Self.modelInfo(for: id) else {
             throw VoxtralServiceError.modelNotConfigured
         }
+        removeIncompleteModelIfPresent(info)
         _ = try await ModelDownloader.download(info, progress: progress)
 #else
         throw VoxtralServiceError.unavailable
+#endif
+    }
+
+    func cleanupInterruptedDownloads() {
+#if canImport(VoxtralCore)
+        for info in Self.availableModelInfos() {
+            removeIncompleteModelIfPresent(info)
+        }
 #endif
     }
 
@@ -188,6 +213,28 @@ actor VoxtralService {
         availableModelInfos().first(where: { $0.id == id })
     }
 
+    private static func familyLabel(for id: String) -> String {
+        switch id {
+        case "mini-3b", "mini-3b-8bit", "mini-3b-4bit":
+            return "Mini 3B"
+        default:
+            return "Other"
+        }
+    }
+
+    private static func peakMemoryLabel(for id: String) -> String {
+        switch id {
+        case "mini-3b":
+            return "~15 GB"
+        case "mini-3b-8bit":
+            return "~10 GB"
+        case "mini-3b-4bit":
+            return "~8 GB"
+        default:
+            return "Unknown"
+        }
+    }
+
     private static func pipelineModel(for id: String) -> VoxtralPipeline.Model? {
         switch id {
         case "mini-3b":
@@ -199,6 +246,13 @@ actor VoxtralService {
         default:
             return nil
         }
+    }
+
+    private func removeIncompleteModelIfPresent(_ info: VoxtralModelInfo) {
+        guard let path = ModelDownloader.findModelPath(for: info) else { return }
+        let verification = ModelDownloader.verifyShardedModel(at: path)
+        guard !verification.complete else { return }
+        try? ModelDownloader.deleteModel(info)
     }
 
     private func loadPipelineIfNeeded() async throws -> VoxtralPipeline {

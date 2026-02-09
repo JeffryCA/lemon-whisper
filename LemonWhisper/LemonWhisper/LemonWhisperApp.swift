@@ -35,6 +35,8 @@ final class LemonWhisperController: ObservableObject {
 
     @Published var whisperStatus: String?
     @Published var voxtralStatus: String?
+    @Published var whisperDownloadProgress: [String: Double] = [:]
+    @Published var voxtralDownloadProgress: [String: Double] = [:]
 
     private var whisperOperationsInFlight: Set<String> = []
     private var voxtralOperationsInFlight: Set<String> = []
@@ -88,6 +90,8 @@ final class LemonWhisperController: ObservableObject {
         startStatusPolling()
 
         Task { @MainActor in
+            WhisperModelCatalog.cleanupInterruptedDownloads()
+            await VoxtralService.shared.cleanupInterruptedDownloads()
             await initializeModelsAndBackend()
         }
     }
@@ -163,15 +167,21 @@ final class LemonWhisperController: ObservableObject {
         }
 
         whisperOperationsInFlight.insert(id)
+        whisperDownloadProgress[id] = 0
         whisperStatus = "Downloading \(option.title)..."
 
         Task { @MainActor in
             defer {
                 whisperOperationsInFlight.remove(id)
+                whisperDownloadProgress[id] = nil
             }
 
             do {
-                try await WhisperModelCatalog.downloadModel(option)
+                try await WhisperModelCatalog.downloadModel(option) { progress in
+                    Task { @MainActor in
+                        self.whisperDownloadProgress[id] = progress
+                    }
+                }
                 whisperStatus = "Downloaded \(option.title)"
                 refreshWhisperDownloads()
                 if selectedWhisperModelID == id {
@@ -211,17 +221,20 @@ final class LemonWhisperController: ObservableObject {
     func downloadVoxtralModel(_ id: String) {
         guard !voxtralOperationsInFlight.contains(id) else { return }
         voxtralOperationsInFlight.insert(id)
+        voxtralDownloadProgress[id] = 0
         voxtralStatus = "Downloading Voxtral model..."
 
         Task { @MainActor in
             defer {
                 voxtralOperationsInFlight.remove(id)
+                voxtralDownloadProgress[id] = nil
             }
 
             do {
                 try await VoxtralService.shared.downloadModel(id) { progress, status in
                     let pct = Int(progress * 100)
                     Task { @MainActor in
+                        self.voxtralDownloadProgress[id] = progress
                         self.voxtralStatus = "[\(pct)%] \(status)"
                     }
                 }
@@ -269,6 +282,14 @@ final class LemonWhisperController: ObservableObject {
 
     func isVoxtralBusy(_ id: String) -> Bool {
         voxtralOperationsInFlight.contains(id)
+    }
+
+    func whisperProgress(_ id: String) -> Double? {
+        whisperDownloadProgress[id]
+    }
+
+    func voxtralProgress(_ id: String) -> Double? {
+        voxtralDownloadProgress[id]
     }
 
     private func capturePasteTargetApp() {
@@ -616,7 +637,7 @@ struct LemonWhisperApp: App {
         Window("Open Lemon", id: "open-lemon") {
             ContentView(controller: controller)
         }
-        .defaultSize(width: 760, height: 540)
+        .windowResizability(.contentSize)
 
         MenuBarExtra {
             MenuBarContentView(controller: controller)
