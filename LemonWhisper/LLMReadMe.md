@@ -1,73 +1,45 @@
-# 🍋 LemonWhisper
+# LemonWhisper
 
-## 🎯 Goal
+## Goal
 
-Build a lightweight macOS app that offers simple local transcription functionality.
+Ship a local macOS dictation app with reliable hotkey capture, local model switching, and low-friction UX.
 
----
+## Current State
 
-## User Engagement
+- Menu bar app is implemented and installable.
+- Recording is toggled by hotkey (`Ctrl+Y`) and works in background apps.
+- Start/stop indicators and transcription loading indicator are shown near the cursor.
+- Clipboard + paste flow is implemented.
+- Local model management exists for Whisper and Voxtral.
+- Runtime model download/reuse is in place (models are not bundled in app resources).
+- Basic settings window exists (`Open Lemon`) with language/model selection and local model management.
 
-User is a beginner swift programmer so explain the code and the concepts so that he learns as he goes along.
-Always ask the user for context/access to other files if they are relevant to the task at hand.
+## Done
 
-Files created so far:
+- Record -> transcribe -> copy/paste flow.
+- Global hotkey support.
+- Menu bar mode with open/quit actions.
+- Language selection.
+- Model selection and model download/remove UI.
+- Process memory indicator in UI/menu.
 
-```bash
-find /Users/jeffrycacho/Documents/personal/projects/lemon-whisper/LemonWhisper/LemonWhisper -type f | sed 's|/Users/jeffrycacho/Documents/personal/projects/lemon-whisper/LemonWhisper/LemonWhisper/||'
-```
+## Next Priorities
 
-Files:
-Resources/models/ggml-large-v3-turbo.bin
-Resources/models/ggml-silero-v5.1.2.bin
-Managers/FileManager+Extensions.swift
-Managers/TranscriptionManager.swift
-Managers/AudioRecorder.swift
-Managers/LiveAudioStreamManager.swift
-LemonWhisperApp.swift
-LemonWhisper.entitlements
-Views/ContentView.swift
-Info.plist
-Services/WhisperContext.swift
+- Polish settings UX and onboarding for permissions.
+- Finalize distribution pipeline (`.dmg`, signing, notarization).
+- Add update mechanism (Sparkle) after release packaging is stable.
+- Add lightweight QA pass for long-audio behavior and paste reliability across apps.
 
----
+## Later Ideas
 
-## 🗺️ Feature Roadmap
-
-Progressive implementation plan
-
-- [x] Basic button to record and transcribe on testing-UI
-- [x] Make sure the whisper setting match the ones in (pyLemonWhisper/common.py)
-- [x] Remove the transcription button and now when we stop recording we transcribe the audio
-- [x] when you stop recording, copy the transcription to the clipboard and also paste it into whatever text field is currently active (lets add a test text field to the testing-UI)
-- [x] Add hotkey support for recording (control + Y to start and to stop) - hotkey should work even when the app is in the background!
-- [ ] Add an option to use live transcription (transcribe as you speak) using VAD see (pyLemonWhisper/live.py)
-    - add a toggle to enable/disable live transcription in test UI
-    - use macOS native APIs for VAD instead of the silero VAD
-- [ ] Move the functionality to a menu bar app - keep the testing-UI for debugging purposes
-- [ ] Add language selection on the menu bar app
-- [ ] Add toggle to enable/disable live transcription on the menu bar app
-- [ ] Make sure the menu bar app stays active even when the main window is closed
-- [ ] Add a quit option to the menu bar app
-- [ ] Add a open window option to the menu bar app
-- [ ] Fix the app icon and menu bar icon
-- [ ] Make the UI of the app polished (onboarding to get permissions, settings page)
-    - For the design lets try to use macOS new glass like effect
-    - [ ] Let user define the hotkey for recording (start and stop in UI)
-    - [ ] Language selection in settings
-    - [ ] Download the models on first run IF they are not already downloaded
-
-
----
-
-Possible future features:
-- [ ] Offer online transcription for different providers
-- [ ] "Hey Lemon" -> should automatically call a local LLM endpoint for assistant like features
-- [ ] Instead of saving to clipboard and pasting offer optionalilty to save to a file
-    - [ ] Save those transcriptions to a directory set by the user
-    - [ ] Offer a way for the user to view, edit and delete those transcriptions
-- [ ] Clean transcription using LLMs
-- [ ] Reliably capture audio from the microphone AND the system audio for meetings
-    - [ ] Create an index of peoples voices and when transcribing meetings, identify who is speaking.
-- [ ] Obsidian integration
-    - [ ] Long transcriptions get enriched with metadata (e.g. speakers, bulletpoints)
+- Offer online transcription providers.
+- "Hey Lemon" mode that can call a local LLM endpoint for assistant-like actions.
+- Save-to-file mode in addition to clipboard/paste:
+  - Save transcriptions to a user-defined directory.
+  - Provide a simple way to view, edit, and delete saved transcriptions.
+- Clean/refine transcriptions with LLMs.
+- Reliable meeting capture workflow:
+  - Capture microphone + system audio.
+  - Add speaker identification support.
+- Obsidian integration:
+  - Enrich long transcriptions with metadata (speakers, bullet points, summaries).
