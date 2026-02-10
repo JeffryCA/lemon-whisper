@@ -29,6 +29,14 @@ Ship a local macOS dictation app with reliable hotkey capture, local model switc
 - Finalize distribution pipeline (`.dmg`, signing, notarization).
 - Add update mechanism (Sparkle) after release packaging is stable.
 - Add lightweight QA pass for long-audio behavior and paste reliability across apps.
+- Support long audio transcription without blowing up memory.
+- Suport live transcription with VAD.
+
+## Current Bugs
+
+- WhatsApp paste behavior can overwrite previous text on consecutive transcriptions instead of appending.
+- Whisper can loop/repeat and degrade output quality on long audio.
+- Whisper long-audio handling is still unstable and needs hardening.
 
 ## Later Ideas
 
