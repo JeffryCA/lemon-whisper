@@ -35,6 +35,7 @@ enum VoxtralServiceError: LocalizedError {
 
 actor VoxtralService {
     static let shared = VoxtralService()
+    static let defaultModelID = "mini-3b-4bit"
 
     private let selectedModelDefaultsKey = "selectedVoxtralModelID"
 
@@ -51,7 +52,7 @@ actor VoxtralService {
         if let stored, Self.modelInfo(for: stored) != nil {
             self.selectedModelID = stored
         } else {
-            self.selectedModelID = "mini-3b-8bit"
+            self.selectedModelID = Self.defaultModelID
         }
     }
 #else

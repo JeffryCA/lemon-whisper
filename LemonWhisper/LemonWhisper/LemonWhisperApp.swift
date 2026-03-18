@@ -78,11 +78,6 @@ final class LemonWhisperController: ObservableObject {
     }
 
     init() {
-        if let storedBackend = UserDefaults.standard.string(forKey: "selectedTranscriptionBackend"),
-           let backend = TranscriptionBackend(rawValue: storedBackend) {
-            selectedBackend = backend
-        }
-
         logMicrophonePermissionState()
         requestAccessibilityPermission()
         setupHotKeys()
@@ -275,6 +270,9 @@ final class LemonWhisperController: ObservableObject {
                 }
                 voxtralStatus = "Voxtral model downloaded"
                 await refreshVoxtralDownloads()
+                if id == selectedVoxtralModelID {
+                    _ = await prepareAndMaybeSwitchToVoxtral()
+                }
             } catch {
                 voxtralStatus = "Voxtral download failed: \(error.localizedDescription)"
             }
@@ -345,18 +343,29 @@ final class LemonWhisperController: ObservableObject {
         refreshWhisperDownloads()
         await refreshVoxtralDownloads()
 
-        if downloadedWhisperModels.isEmpty,
-           let defaultOption = WhisperModelCatalog.option(for: WhisperModelCatalog.defaultModelID) {
-            whisperStatus = "No Whisper model found locally. Downloading default model..."
-            downloadWhisperModel(defaultOption.id)
+        if !downloadedVoxtralModels.contains(where: { $0.id == selectedVoxtralModelID }) {
+            voxtralStatus = "Downloading Voxtral Mini 3B (4-bit mixed) by default..."
+            downloadVoxtralModel(selectedVoxtralModelID)
+            ensureWhisperFallbackIfNeeded()
+            return
         }
 
-        switch selectedBackend {
-        case .whisper:
-            preloadWhisperIfNeeded()
-        case .voxtral:
-            await prepareAndMaybeSwitchToVoxtral()
+        if await prepareAndMaybeSwitchToVoxtral() {
+            return
         }
+
+        ensureWhisperFallbackIfNeeded()
+    }
+
+    private func ensureWhisperFallbackIfNeeded() {
+        if downloadedWhisperModels.isEmpty,
+           let defaultOption = WhisperModelCatalog.option(for: WhisperModelCatalog.defaultModelID) {
+            whisperStatus = "Downloading Whisper fallback model..."
+            downloadWhisperModel(defaultOption.id)
+            return
+        }
+
+        preloadWhisperIfNeeded()
     }
 
     private func refreshWhisperDownloads() {
@@ -393,27 +402,26 @@ final class LemonWhisperController: ObservableObject {
         }
     }
 
-    private func prepareAndMaybeSwitchToVoxtral() async {
+    @discardableResult
+    private func prepareAndMaybeSwitchToVoxtral() async -> Bool {
         if isPreparingVoxtral {
-            return
+            return selectedBackend == .voxtral
         }
 
         guard downloadedVoxtralModels.contains(where: { $0.id == selectedVoxtralModelID }) else {
-            selectedBackend = .whisper
-            UserDefaults.standard.set(TranscriptionBackend.whisper.rawValue, forKey: "selectedTranscriptionBackend")
-            voxtralStatus = "Selected Voxtral model is not downloaded. Staying on Whisper."
-            return
+            voxtralStatus = "Voxtral Mini 3B (4-bit mixed) is still downloading."
+            return false
         }
 
         if await VoxtralService.shared.isReady {
             selectedBackend = .voxtral
             UserDefaults.standard.set(TranscriptionBackend.voxtral.rawValue, forKey: "selectedTranscriptionBackend")
             print("✅ Voxtral is ready. Switched backend.")
-            return
+            return true
         }
 
         isPreparingVoxtral = true
-        print("⏳ Preparing Voxtral in background. Staying on Whisper until ready.")
+        print("⏳ Preparing Voxtral in background.")
         defer { isPreparingVoxtral = false }
 
         do {
@@ -421,6 +429,7 @@ final class LemonWhisperController: ObservableObject {
             selectedBackend = .voxtral
             UserDefaults.standard.set(TranscriptionBackend.voxtral.rawValue, forKey: "selectedTranscriptionBackend")
             print("✅ Voxtral ready. Switched backend.")
+            return true
         } catch {
             selectedBackend = .whisper
             UserDefaults.standard.set(TranscriptionBackend.whisper.rawValue, forKey: "selectedTranscriptionBackend")
@@ -430,6 +439,7 @@ final class LemonWhisperController: ObservableObject {
                 print("❌ Voxtral preparation failed. Staying on Whisper: \(error.localizedDescription)")
             }
             await VoxtralService.shared.unload()
+            return false
         }
     }
 
@@ -656,7 +666,9 @@ final class TranscriptionLoadingHUD {
 
 private struct MenuBarContentView: View {
     @ObservedObject var controller: LemonWhisperController
-    @Environment(\.openWindow) private var openWindow
+    @ObservedObject var historyStore: TranscriptionHistoryStore
+    @ObservedObject var navigationState: AppNavigationState
+    let windowController: AppWindowController
 
     var body: some View {
         Button(controller.isRecording ? "Stop Recording" : "Start Recording (Ctrl+Y)") {
@@ -719,13 +731,49 @@ private struct MenuBarContentView: View {
             }
         }
 
+        Menu("Transcriptions") {
+            Button("Open History") {
+                navigationState.show(.transcriptions)
+                windowController.show(
+                    controller: controller,
+                    historyStore: historyStore,
+                    navigationState: navigationState
+                )
+            }
+
+            Divider()
+
+            if historyStore.items.isEmpty {
+                Text("No saved transcriptions yet")
+            } else {
+                let recentItems = Array(historyStore.items.prefix(10))
+
+                ForEach(recentItems) { item in
+                    Button {
+                        historyStore.copyToClipboard(item)
+                    } label: {
+                        Label(item.menuTitle, systemImage: "doc.on.doc")
+                    }
+                }
+
+                if historyStore.items.count > recentItems.count {
+                    Divider()
+                    Text("\(historyStore.items.count - recentItems.count) more in History")
+                }
+            }
+        }
+
         Divider()
         Text("Process memory: \(controller.processMemoryMB) MB")
             .font(.caption2)
 
         Button("Open Lemon") {
-            openWindow(id: "open-lemon")
-            NSApp.activate(ignoringOtherApps: true)
+            navigationState.goHome()
+            windowController.show(
+                controller: controller,
+                historyStore: historyStore,
+                navigationState: navigationState
+            )
         }
 
         Button("Quit LemonWhisper") {
@@ -734,18 +782,66 @@ private struct MenuBarContentView: View {
     }
 }
 
+@MainActor
 @main
 struct LemonWhisperApp: App {
-    @StateObject private var controller = LemonWhisperController()
+    private let controller: LemonWhisperController
+    private let historyStore: TranscriptionHistoryStore
+    private let navigationState: AppNavigationState
+    private let windowController: AppWindowController
+
+    init() {
+        let controller = LemonWhisperController()
+        let historyStore = TranscriptionHistoryStore.shared
+        let navigationState = AppNavigationState()
+        let windowController = AppWindowController.shared
+
+        self.controller = controller
+        self.historyStore = historyStore
+        self.navigationState = navigationState
+        self.windowController = windowController
+
+        historyStore.ensureLoaded()
+
+        let launchArguments = Set(CommandLine.arguments)
+        if launchArguments.contains("--codex-open-transcriptions") {
+            DispatchQueue.main.async {
+                navigationState.show(.transcriptions)
+                windowController.show(
+                    controller: controller,
+                    historyStore: historyStore,
+                    navigationState: navigationState
+                )
+            }
+        } else if launchArguments.contains("--codex-open-manage-models") {
+            DispatchQueue.main.async {
+                navigationState.show(.manageModels)
+                windowController.show(
+                    controller: controller,
+                    historyStore: historyStore,
+                    navigationState: navigationState
+                )
+            }
+        } else if launchArguments.contains("--codex-open-main-window") {
+            DispatchQueue.main.async {
+                navigationState.goHome()
+                windowController.show(
+                    controller: controller,
+                    historyStore: historyStore,
+                    navigationState: navigationState
+                )
+            }
+        }
+    }
 
     var body: some Scene {
-        Window("Open Lemon", id: "open-lemon") {
-            ContentView(controller: controller)
-        }
-        .windowResizability(.contentSize)
-
         MenuBarExtra {
-            MenuBarContentView(controller: controller)
+            MenuBarContentView(
+                controller: controller,
+                historyStore: historyStore,
+                navigationState: navigationState,
+                windowController: windowController
+            )
         } label: {
             Image("MenuBarIcon")
                 .renderingMode(.original)

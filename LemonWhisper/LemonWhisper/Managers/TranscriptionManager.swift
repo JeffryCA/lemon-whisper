@@ -117,8 +117,20 @@ class TranscriptionManager {
                     result = try await VoxtralService.shared.transcribe(audioURL: url, language: language)
                 }
 
+                let sanitized = result.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !sanitized.isEmpty else { return }
+
+                if sanitized != "Transcription failed." {
+                    await TranscriptionHistoryStore.shared.record(
+                        rawText: sanitized,
+                        language: language,
+                        backend: backend,
+                        targetBundleIdentifier: targetBundleIdentifier
+                    )
+                }
+
                 copyAndPaste(
-                    result,
+                    sanitized,
                     targetBundleIdentifier: targetBundleIdentifier,
                     targetProcessID: targetProcessID
                 )
