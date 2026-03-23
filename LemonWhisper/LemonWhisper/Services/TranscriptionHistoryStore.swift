@@ -12,6 +12,10 @@ struct TranscriptionRecord: Identifiable, Hashable {
     let backend: String
     let language: String
     let targetBundleIdentifier: String?
+    let pasteStatus: String
+    let pastePath: String?
+    let pasteError: String?
+    let pasteCompletedAt: Date?
 
     var displayText: String {
         if let correctedText {
@@ -33,6 +37,30 @@ struct TranscriptionRecord: Identifiable, Hashable {
 
     var languageLabel: String {
         language == "auto" ? "Auto" : language.uppercased()
+    }
+
+    var pasteStatusLabel: String {
+        switch pasteStatus {
+        case "succeeded":
+            return "Paste OK"
+        case "failed":
+            return "Paste Failed"
+        case "pending":
+            return "Paste Pending"
+        default:
+            return "Paste Unknown"
+        }
+    }
+
+    var pasteMetadataLabel: String? {
+        var components: [String] = []
+        if let pastePath, !pastePath.isEmpty {
+            components.append(pastePath)
+        }
+        if let targetBundleIdentifier, !targetBundleIdentifier.isEmpty {
+            components.append(targetBundleIdentifier)
+        }
+        return components.isEmpty ? nil : components.joined(separator: "  •  ")
     }
 
     var menuTitle: String {
@@ -112,7 +140,11 @@ actor TranscriptionHistoryDatabase {
             createdAt: Date(),
             backend: backend,
             language: language,
-            targetBundleIdentifier: targetBundleIdentifier
+            targetBundleIdentifier: targetBundleIdentifier,
+            pasteStatus: "pending",
+            pastePath: nil,
+            pasteError: nil,
+            pasteCompletedAt: nil
         )
 
         let sql = """
@@ -123,8 +155,12 @@ actor TranscriptionHistoryDatabase {
             created_at,
             backend,
             language,
-            target_bundle_identifier
-        ) VALUES (?, ?, ?, ?, ?, ?, ?);
+            target_bundle_identifier,
+            paste_status,
+            paste_path,
+            paste_error,
+            paste_completed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """
 
         let statement = try prepareStatement(sql)
@@ -137,6 +173,10 @@ actor TranscriptionHistoryDatabase {
         try bindText(record.backend, at: 5, in: statement)
         try bindText(record.language, at: 6, in: statement)
         try bindOptionalText(record.targetBundleIdentifier, at: 7, in: statement)
+        try bindText(record.pasteStatus, at: 8, in: statement)
+        try bindOptionalText(record.pastePath, at: 9, in: statement)
+        try bindOptionalText(record.pasteError, at: 10, in: statement)
+        sqlite3_bind_null(statement, 11)
 
         guard sqlite3_step(statement) == SQLITE_DONE else {
             throw TranscriptionHistoryError.statementExecutionFailed(lastErrorMessage())
@@ -154,7 +194,11 @@ actor TranscriptionHistoryDatabase {
             created_at,
             backend,
             language,
-            target_bundle_identifier
+            target_bundle_identifier,
+            paste_status,
+            paste_path,
+            paste_error,
+            paste_completed_at
         FROM transcriptions
         ORDER BY created_at DESC
         LIMIT ?;
@@ -179,6 +223,12 @@ actor TranscriptionHistoryDatabase {
             let correctedText = stringColumn(at: 2, in: statement)
             let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(statement, 3))
             let targetBundleIdentifier = stringColumn(at: 6, in: statement)
+            let pasteStatus = stringColumn(at: 7, in: statement) ?? "unknown"
+            let pastePath = stringColumn(at: 8, in: statement)
+            let pasteError = stringColumn(at: 9, in: statement)
+            let pasteCompletedAt = sqlite3_column_type(statement, 10) == SQLITE_NULL
+                ? nil
+                : Date(timeIntervalSince1970: sqlite3_column_double(statement, 10))
 
             records.append(
                 TranscriptionRecord(
@@ -188,12 +238,43 @@ actor TranscriptionHistoryDatabase {
                     createdAt: createdAt,
                     backend: backend,
                     language: language,
-                    targetBundleIdentifier: targetBundleIdentifier
+                    targetBundleIdentifier: targetBundleIdentifier,
+                    pasteStatus: pasteStatus,
+                    pastePath: pastePath,
+                    pasteError: pasteError,
+                    pasteCompletedAt: pasteCompletedAt
                 )
             )
         }
 
         return records
+    }
+
+    func updatePasteMetadata(
+        id: UUID,
+        pasteStatus: String,
+        pastePath: String?,
+        pasteError: String?,
+        pasteCompletedAt: Date
+    ) throws {
+        let sql = """
+        UPDATE transcriptions
+        SET paste_status = ?, paste_path = ?, paste_error = ?, paste_completed_at = ?
+        WHERE id = ?;
+        """
+
+        let statement = try prepareStatement(sql)
+        defer { sqlite3_finalize(statement) }
+
+        try bindText(pasteStatus, at: 1, in: statement)
+        try bindOptionalText(pastePath, at: 2, in: statement)
+        try bindOptionalText(pasteError, at: 3, in: statement)
+        sqlite3_bind_double(statement, 4, pasteCompletedAt.timeIntervalSince1970)
+        try bindText(id.uuidString, at: 5, in: statement)
+
+        guard sqlite3_step(statement) == SQLITE_DONE else {
+            throw TranscriptionHistoryError.statementExecutionFailed(lastErrorMessage())
+        }
     }
 
     func delete(id: UUID) throws {
@@ -256,9 +337,38 @@ actor TranscriptionHistoryDatabase {
             created_at REAL NOT NULL,
             backend TEXT NOT NULL,
             language TEXT NOT NULL,
-            target_bundle_identifier TEXT
+            target_bundle_identifier TEXT,
+            paste_status TEXT NOT NULL DEFAULT 'unknown',
+            paste_path TEXT,
+            paste_error TEXT,
+            paste_completed_at REAL
         );
         """,
+            on: connection
+        )
+
+        try addColumnIfNeeded(
+            named: "paste_status",
+            definition: "TEXT NOT NULL DEFAULT 'unknown'",
+            to: "transcriptions",
+            on: connection
+        )
+        try addColumnIfNeeded(
+            named: "paste_path",
+            definition: "TEXT",
+            to: "transcriptions",
+            on: connection
+        )
+        try addColumnIfNeeded(
+            named: "paste_error",
+            definition: "TEXT",
+            to: "transcriptions",
+            on: connection
+        )
+        try addColumnIfNeeded(
+            named: "paste_completed_at",
+            definition: "REAL",
+            to: "transcriptions",
             on: connection
         )
 
@@ -283,6 +393,51 @@ actor TranscriptionHistoryDatabase {
             sqlite3_free(errorMessage)
             throw TranscriptionHistoryError.statementExecutionFailed(message)
         }
+    }
+
+    private static func addColumnIfNeeded(
+        named columnName: String,
+        definition: String,
+        to tableName: String,
+        on connection: OpaquePointer?
+    ) throws {
+        guard !(try table(tableName, hasColumnNamed: columnName, on: connection)) else {
+            return
+        }
+
+        try execute(
+            "ALTER TABLE \(tableName) ADD COLUMN \(columnName) \(definition);",
+            on: connection
+        )
+    }
+
+    private static func table(
+        _ tableName: String,
+        hasColumnNamed columnName: String,
+        on connection: OpaquePointer?
+    ) throws -> Bool {
+        guard let connection else {
+            throw TranscriptionHistoryError.couldNotOpenDatabase("Missing SQLite connection")
+        }
+
+        var statement: OpaquePointer?
+        let sql = "PRAGMA table_info(\(tableName));"
+        let result = sqlite3_prepare_v2(connection, sql, -1, &statement, nil)
+        guard result == SQLITE_OK else {
+            throw TranscriptionHistoryError.statementPreparationFailed(lastErrorMessage(on: connection))
+        }
+        defer { sqlite3_finalize(statement) }
+
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let namePointer = sqlite3_column_text(statement, 1) else {
+                continue
+            }
+            if String(cString: namePointer) == columnName {
+                return true
+            }
+        }
+
+        return false
     }
 
     private func prepareStatement(_ sql: String) throws -> OpaquePointer? {
@@ -373,9 +528,9 @@ final class TranscriptionHistoryStore: ObservableObject {
         language: String,
         backend: TranscriptionBackend,
         targetBundleIdentifier: String?
-    ) async {
+    ) async -> TranscriptionRecord? {
         let sanitized = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !sanitized.isEmpty else { return }
+        guard !sanitized.isEmpty else { return nil }
 
         do {
             let record = try await database.insert(
@@ -390,6 +545,45 @@ final class TranscriptionHistoryStore: ObservableObject {
             }
             lastError = nil
             hasLoaded = true
+            return record
+        } catch {
+            lastError = error.localizedDescription
+            return nil
+        }
+    }
+
+    func updatePasteMetadata(
+        id: UUID,
+        pasteStatus: String,
+        pastePath: String?,
+        pasteError: String?,
+        pasteCompletedAt: Date = Date()
+    ) async {
+        do {
+            try await database.updatePasteMetadata(
+                id: id,
+                pasteStatus: pasteStatus,
+                pastePath: pastePath,
+                pasteError: pasteError,
+                pasteCompletedAt: pasteCompletedAt
+            )
+            if let index = items.firstIndex(where: { $0.id == id }) {
+                let existing = items[index]
+                items[index] = TranscriptionRecord(
+                    id: existing.id,
+                    rawText: existing.rawText,
+                    correctedText: existing.correctedText,
+                    createdAt: existing.createdAt,
+                    backend: existing.backend,
+                    language: existing.language,
+                    targetBundleIdentifier: existing.targetBundleIdentifier,
+                    pasteStatus: pasteStatus,
+                    pastePath: pastePath,
+                    pasteError: pasteError,
+                    pasteCompletedAt: pasteCompletedAt
+                )
+            }
+            lastError = nil
         } catch {
             lastError = error.localizedDescription
         }
