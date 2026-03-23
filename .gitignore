@@ -209,14 +209,14 @@ __marimo__/
 # Temp
 temp/
 whisper.cpp/
-eval/runs/
-eval/audio_corpus/
+eval/
 
 **/Resources/models/
 LemonWhisper/LemonWhisper/Resources/models/
 
 # Xcode
 #
+.DS_Store
 # User-specific files
 *.xcuserdatad
 *.xccheckout

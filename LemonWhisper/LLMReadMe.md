@@ -28,13 +28,21 @@ Ship a local macOS dictation app with reliable hotkey capture, local model switc
 - Polish settings UX and onboarding for permissions.
 - Finalize distribution pipeline (`.dmg`, signing, notarization).
 - Add update mechanism (Sparkle) after release packaging is stable.
-- Add lightweight QA pass for long-audio behavior and paste reliability across apps.
+- Figure out a local agent iteration workflow so Codex can run and test the app directly.
 - Support long audio transcription without blowing up memory.
+- Add a settings option to keep models loaded in memory or unload when idle (fast vs low-memory mode).
+- Persist user-selected default model and always restore it on app launch.
+- Add optional trailing Enter behavior: if transcription ends with the spoken word "enter", send Return after paste.
+- Add a "locked target field" mode: capture focused text field when recording starts and paste back into that same field even if focus/cursor changes before transcription ends.
 - Suport live transcription with VAD.
+- Explore a lightweight local GRU-based post-processor for text formatting.
+- Design efficient local streaming for transcription + formatting pipeline.
+- Improve silence handling (better VAD thresholds/segmentation) to avoid awkward cuts and loops.
 
 ## Current Bugs
 
 - WhatsApp paste behavior can overwrite previous text on consecutive transcriptions instead of appending.
+- Auto-paste does not work in some native macOS apps, including Anthropic's Claude app.
 - Whisper can loop/repeat and degrade output quality on long audio.
 - Whisper long-audio handling is still unstable and needs hardening.
 
