@@ -22,6 +22,7 @@ enum TranscriptionBackend: String, CaseIterable, Identifiable {
 
 class TranscriptionManager {
     static let shared = TranscriptionManager()
+    private let textInsertionService = TextInsertionService()
 
     func transcribe(
         buffer: AVAudioPCMBuffer,
@@ -120,20 +121,32 @@ class TranscriptionManager {
                 let sanitized = result.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !sanitized.isEmpty else { return }
 
+                let savedRecord: TranscriptionRecord?
                 if sanitized != "Transcription failed." {
-                    await TranscriptionHistoryStore.shared.record(
+                    savedRecord = await TranscriptionHistoryStore.shared.record(
                         rawText: sanitized,
                         language: language,
                         backend: backend,
                         targetBundleIdentifier: targetBundleIdentifier
                     )
+                } else {
+                    savedRecord = nil
                 }
 
-                copyAndPaste(
+                let insertionResult = await copyAndPaste(
                     sanitized,
                     targetBundleIdentifier: targetBundleIdentifier,
                     targetProcessID: targetProcessID
                 )
+
+                if let savedRecord {
+                    await TranscriptionHistoryStore.shared.updatePasteMetadata(
+                        id: savedRecord.id,
+                        pasteStatus: insertionResult.succeeded ? "succeeded" : "failed",
+                        pastePath: insertionResult.path?.rawValue,
+                        pasteError: insertionResult.errorMessage
+                    )
+                }
 
             } catch {
                 print("❌ Error during transcription: \(error)")
@@ -145,148 +158,29 @@ class TranscriptionManager {
         _ text: String,
         targetBundleIdentifier: String?,
         targetProcessID: pid_t?
-    ) {
+    ) async -> TextInsertionResult {
         let sanitized = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !sanitized.isEmpty else { return }
-
-        let pb = NSPasteboard.general
-        pb.clearContents()
-        pb.setString(sanitized, forType: .string)
-        print("📋 Copied \(sanitized.count) chars to clipboard")
-
-        let focused = focusTargetApp(bundleIdentifier: targetBundleIdentifier, processID: targetProcessID)
-        print("🎯 Focus target result: \(focused)")
-        Thread.sleep(forTimeInterval: 0.20)
-
-        if insertTextViaAccessibility(sanitized) {
-            print("✅ Paste path: Accessibility text insertion")
-            return
+        guard !sanitized.isEmpty else {
+            return TextInsertionResult(path: nil, errorMessage: "Cannot paste empty text.")
         }
 
-        if postCommandV(tap: .cghidEventTap) {
-            print("✅ Paste path: CGEvent cghidEventTap")
-            return
-        }
-        if postCommandV(tap: .cgAnnotatedSessionEventTap) {
-            print("✅ Paste path: CGEvent cgAnnotatedSessionEventTap")
-            return
-        }
-
-        if pasteWithAppleScript() {
-            print("✅ Paste path: AppleScript System Events")
-            return
-        }
-
-        print("❌ All paste paths failed")
-    }
-
-    private func focusTargetApp(bundleIdentifier: String?, processID: pid_t?) -> Bool {
-        if let processID,
-           let app = NSRunningApplication(processIdentifier: processID) {
-            return app.activate()
-        }
-
-        if let bundleIdentifier,
-           let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier).first {
-            return app.activate()
-        }
-        return false
-    }
-
-    private func postCommandV(tap: CGEventTapLocation) -> Bool {
-        guard let src = CGEventSource(stateID: .combinedSessionState) else {
-            print("⚠️ CGEvent source unavailable")
-            return false
-        }
-        guard let cmdDown = CGEvent(keyboardEventSource: src, virtualKey: 0x37, keyDown: true),
-              let vDown = CGEvent(keyboardEventSource: src, virtualKey: 0x09, keyDown: true),
-              let vUp = CGEvent(keyboardEventSource: src, virtualKey: 0x09, keyDown: false),
-              let cmdUp = CGEvent(keyboardEventSource: src, virtualKey: 0x37, keyDown: false) else {
-            print("⚠️ Failed to create CGEvents")
-            return false
-        }
-        vDown.flags = .maskCommand
-        vUp.flags = .maskCommand
-        cmdDown.post(tap: tap)
-        vDown.post(tap: tap)
-        vUp.post(tap: tap)
-        cmdUp.post(tap: tap)
-        return true
-    }
-
-    private func pasteWithAppleScript() -> Bool {
-        let scriptSource = """
-        tell application "System Events"
-            keystroke "v" using {command down}
-        end tell
-        """
-        guard let script = NSAppleScript(source: scriptSource) else { return false }
-        var errorInfo: NSDictionary?
-        script.executeAndReturnError(&errorInfo)
-        if let errorInfo {
-            print("⚠️ AppleScript paste failed: \(errorInfo)")
-            return false
-        }
-        return true
-    }
-
-    private func insertTextViaAccessibility(_ text: String) -> Bool {
-        guard AXIsProcessTrusted() else {
-            print("⚠️ Accessibility not trusted for AX text insertion")
-            return false
-        }
-
-        let systemWide = AXUIElementCreateSystemWide()
-        var focusedObject: CFTypeRef?
-        let focusedResult = AXUIElementCopyAttributeValue(
-            systemWide,
-            kAXFocusedUIElementAttribute as CFString,
-            &focusedObject
-        )
-        guard focusedResult == .success, let focusedObject else {
-            print("⚠️ Could not get focused AX element (\(focusedResult.rawValue))")
-            return false
-        }
-
-        let focusedElement = focusedObject as! AXUIElement
-
-        var settable = DarwinBoolean(false)
-        let selectedTextSettableResult = AXUIElementIsAttributeSettable(
-            focusedElement,
-            kAXSelectedTextAttribute as CFString,
-            &settable
-        )
-        if selectedTextSettableResult == .success && settable.boolValue {
-            let selectedTextResult = AXUIElementSetAttributeValue(
-                focusedElement,
-                kAXSelectedTextAttribute as CFString,
-                text as CFTypeRef
+        let insertionResult = await MainActor.run {
+            textInsertionService.insertText(
+                sanitized,
+                targetBundleIdentifier: targetBundleIdentifier,
+                targetProcessID: targetProcessID
             )
-            if selectedTextResult == .success {
-                return true
-            }
-            print("⚠️ AX selected text set failed (\(selectedTextResult.rawValue))")
         }
 
-        settable = DarwinBoolean(false)
-        let valueSettableResult = AXUIElementIsAttributeSettable(
-            focusedElement,
-            kAXValueAttribute as CFString,
-            &settable
-        )
-        if valueSettableResult == .success && settable.boolValue {
-            let valueResult = AXUIElementSetAttributeValue(
-                focusedElement,
-                kAXValueAttribute as CFString,
-                text as CFTypeRef
-            )
-            if valueResult == .success {
-                return true
-            }
-            print("⚠️ AX value set failed (\(valueResult.rawValue))")
+        if !insertionResult.succeeded {
+            print("❌ \(insertionResult.errorMessage ?? "All paste paths failed")")
+            return insertionResult
         }
 
-        return false
+        if let path = insertionResult.path {
+            print("✅ Paste path: \(path.logLabel)")
+        }
+        return insertionResult
     }
 
     private func ensureWhisperContextLoaded() async throws -> WhisperContext {

@@ -49,11 +49,6 @@ private struct TranscriptionHistoryCard: View {
                     Text(item.timestampLabel)
                         .font(.headline)
                         .foregroundStyle(.primary)
-
-                    HStack(spacing: 8) {
-                        HistoryPill(text: item.backendLabel)
-                        HistoryPill(text: item.languageLabel)
-                    }
                 }
 
                 Spacer()
@@ -94,22 +89,6 @@ private struct TranscriptionHistoryCard: View {
                 )
                 .shadow(color: Color.black.opacity(0.08), radius: 10, x: 0, y: 4)
         )
-    }
-}
-
-private struct HistoryPill: View {
-    let text: String
-
-    var body: some View {
-        Text(text)
-            .font(.caption)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(
-                Capsule()
-                    .fill(Color(nsColor: .windowBackgroundColor))
-            )
-            .foregroundStyle(.secondary)
     }
 }
 
