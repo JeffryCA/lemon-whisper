@@ -514,12 +514,80 @@ final class LemonWhisperController: ObservableObject {
     }
 }
 
+private func makeFloatingHUDPanel(size: CGSize) -> NSPanel {
+    let panel = NSPanel(
+        contentRect: NSRect(origin: .zero, size: size),
+        styleMask: [.borderless, .nonactivatingPanel],
+        backing: .buffered,
+        defer: false
+    )
+    panel.isOpaque = false
+    panel.backgroundColor = .clear
+    panel.hasShadow = false
+    panel.ignoresMouseEvents = true
+    panel.hidesOnDeactivate = false
+    panel.level = .floating
+    panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+    return panel
+}
+
+@MainActor
+private final class CursorTrackingPanelController {
+    private weak var panel: NSPanel?
+    private let verticalOffset: CGFloat
+    private let updateInterval: TimeInterval
+    private var timer: Timer?
+
+    init(
+        panel: NSPanel,
+        verticalOffset: CGFloat = 18,
+        updateInterval: TimeInterval = 1.0 / 30.0
+    ) {
+        self.panel = panel
+        self.verticalOffset = verticalOffset
+        self.updateInterval = updateInterval
+    }
+
+    func start() {
+        stop()
+        updatePosition()
+
+        let timer = Timer(timeInterval: updateInterval, repeats: true) { [weak self] _ in
+            self?.updatePosition()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+    }
+
+    func stop() {
+        timer?.invalidate()
+        timer = nil
+    }
+
+    private func updatePosition() {
+        guard let panel, let point = pointerPosition() else { return }
+        let frame = panel.frame
+        panel.setFrameOrigin(
+            NSPoint(
+                x: point.x - (frame.width / 2),
+                y: point.y + verticalOffset
+            )
+        )
+    }
+
+    private func pointerPosition() -> NSPoint? {
+        let point = NSEvent.mouseLocation
+        return point.x.isFinite && point.y.isFinite ? point : nil
+    }
+}
+
 @MainActor
 final class RecordingPulseHUD {
     static let shared = RecordingPulseHUD()
 
     private var panel: NSPanel?
     private var dotView: NSView?
+    private var cursorTracker: CursorTrackingPanelController?
     private var hideWorkItem: DispatchWorkItem?
     private let dotSize: CGFloat = 22
 
@@ -535,9 +603,7 @@ final class RecordingPulseHUD {
             : NSColor(calibratedWhite: 0.72, alpha: 0.95)
         dotView.layer?.backgroundColor = pulseColor.cgColor
 
-        if let point = pointerPosition() {
-            panel.setFrameOrigin(NSPoint(x: point.x - (dotSize / 2), y: point.y + 18))
-        }
+        cursorTracker?.start()
 
         panel.alphaValue = 0
         panel.orderFrontRegardless()
@@ -552,6 +618,7 @@ final class RecordingPulseHUD {
                 context.duration = 0.16
                 panel.animator().alphaValue = 0
             }, completionHandler: {
+                self.cursorTracker?.stop()
                 panel.orderOut(nil)
             })
         }
@@ -562,20 +629,7 @@ final class RecordingPulseHUD {
     private func ensurePanel() {
         guard panel == nil else { return }
 
-        let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: dotSize, height: dotSize),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        panel.ignoresMouseEvents = true
-        panel.hidesOnDeactivate = false
-        panel.level = .floating
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-
+        let panel = makeFloatingHUDPanel(size: CGSize(width: dotSize, height: dotSize))
         let dotView = NSView(frame: NSRect(x: 0, y: 0, width: dotSize, height: dotSize))
         dotView.wantsLayer = true
         dotView.layer?.cornerRadius = dotSize / 2
@@ -584,11 +638,7 @@ final class RecordingPulseHUD {
 
         self.panel = panel
         self.dotView = dotView
-    }
-
-    private func pointerPosition() -> NSPoint? {
-        let point = NSEvent.mouseLocation
-        return point.x.isFinite && point.y.isFinite ? point : nil
+        self.cursorTracker = CursorTrackingPanelController(panel: panel)
     }
 }
 
@@ -598,6 +648,7 @@ final class TranscriptionLoadingHUD {
 
     private var panel: NSPanel?
     private var spinner: NSProgressIndicator?
+    private var cursorTracker: CursorTrackingPanelController?
     private let size: CGFloat = 24
 
     private init() {}
@@ -606,16 +657,14 @@ final class TranscriptionLoadingHUD {
         ensurePanel()
         guard let panel else { return }
 
-        if let point = pointerPosition() {
-            panel.setFrameOrigin(NSPoint(x: point.x - (size / 2), y: point.y + 18))
-        }
-
+        cursorTracker?.start()
         panel.alphaValue = 1
         panel.orderFrontRegardless()
         spinner?.startAnimation(nil)
     }
 
     func hide() {
+        cursorTracker?.stop()
         spinner?.stopAnimation(nil)
         panel?.orderOut(nil)
     }
@@ -623,20 +672,7 @@ final class TranscriptionLoadingHUD {
     private func ensurePanel() {
         guard panel == nil else { return }
 
-        let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: size, height: size),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        panel.ignoresMouseEvents = true
-        panel.hidesOnDeactivate = false
-        panel.level = .floating
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-
+        let panel = makeFloatingHUDPanel(size: CGSize(width: size, height: size))
         let container = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: size, height: size))
         container.material = .hudWindow
         container.blendingMode = .withinWindow
@@ -656,11 +692,7 @@ final class TranscriptionLoadingHUD {
 
         self.panel = panel
         self.spinner = spinner
-    }
-
-    private func pointerPosition() -> NSPoint? {
-        let point = NSEvent.mouseLocation
-        return point.x.isFinite && point.y.isFinite ? point : nil
+        self.cursorTracker = CursorTrackingPanelController(panel: panel)
     }
 }
 
