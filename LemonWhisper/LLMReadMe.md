@@ -9,7 +9,7 @@ Ship a local macOS dictation app with reliable hotkey capture, local model switc
 - Menu bar app is implemented and installable.
 - Recording is toggled by hotkey (`Ctrl+Y`) and works in background apps.
 - Start/stop indicators and transcription loading indicator are shown near the cursor.
-- Clipboard + paste flow is implemented.
+- Clipboard + auto-paste flow is implemented.
 - Local model management exists for Whisper and Voxtral.
 - Runtime model download/reuse is in place (models are not bundled in app resources).
 - Basic settings window exists (`Open Lemon`) with language/model selection and local model management.
@@ -21,6 +21,7 @@ Ship a local macOS dictation app with reliable hotkey capture, local model switc
 - Menu bar mode with open/quit actions.
 - Language selection.
 - Model selection and model download/remove UI.
+- More reliable native app text insertion with cursor-following HUDs.
 - Process memory indicator in UI/menu.
 
 ## Next Priorities
@@ -41,8 +42,6 @@ Ship a local macOS dictation app with reliable hotkey capture, local model switc
 
 ## Current Bugs
 
-- WhatsApp paste behavior can overwrite previous text on consecutive transcriptions instead of appending.
-- Auto-paste does not work in some native macOS apps, including Anthropic's Claude app.
 - Whisper can loop/repeat and degrade output quality on long audio.
 - Whisper long-audio handling is still unstable and needs hardening.
 
