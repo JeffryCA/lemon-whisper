@@ -4,60 +4,42 @@ import UniformTypeIdentifiers
 
 struct TranscriptionHistoryView: View {
     @ObservedObject var store: TranscriptionHistoryStore
-    @State private var exportErrorMessage: String?
 
     var body: some View {
         ZStack {
             LemonChrome.windowBackground
                 .ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                historyHeader
-                    .padding(.horizontal, 18)
-                    .padding(.top, 18)
-                    .padding(.bottom, 12)
-
-                Group {
-                    if store.isLoadingInitialPage && store.items.isEmpty {
-                        ProgressView("Loading transcriptions…")
-                            .lemonNeutralProgressTint()
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                    } else if store.items.isEmpty {
-                        ContentUnavailableView(
-                            "No transcriptions yet",
-                            systemImage: "text.bubble",
-                            description: Text(store.lastError ?? "Saved transcriptions will appear here after you stop a recording.")
-                        )
-                    } else {
-                        ScrollView {
-                            LazyVStack(alignment: .leading, spacing: 14) {
-                                ForEach(store.items) { item in
-                                    TranscriptionHistoryCard(
-                                        item: item,
-                                        onCopy: { store.copyToClipboard(item) },
-                                        onDelete: { store.delete(item) }
-                                    )
-                                    .task(id: item.id) {
-                                        await store.loadMoreIfNeeded(currentItem: item)
-                                    }
-                                }
-
-                                if store.isLoadingMorePages {
-                                    ProgressView("Loading older transcriptions…")
-                                        .lemonNeutralProgressTint()
-                                        .frame(maxWidth: .infinity, alignment: .center)
-                                        .padding(.top, 4)
-                                } else if store.hasMoreItems {
-                                    Text("Scroll down to load older transcriptions")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .frame(maxWidth: .infinity, alignment: .center)
-                                        .padding(.top, 4)
+            Group {
+                if store.isLoadingInitialPage && store.items.isEmpty {
+                    ProgressView("Loading transcriptions…")
+                        .lemonNeutralProgressTint()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                } else if store.items.isEmpty {
+                    ContentUnavailableView(
+                        "No transcriptions yet",
+                        systemImage: "text.bubble",
+                        description: Text(store.lastError ?? "Saved transcriptions will appear here after you stop a recording.")
+                    )
+                } else {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 14) {
+                            ForEach(store.items) { item in
+                                TranscriptionHistoryCard(
+                                    item: item,
+                                    onCopy: { store.copyToClipboard(item) },
+                                    onDelete: { store.delete(item) }
+                                )
+                                .task(id: item.id) {
+                                    await store.loadMoreIfNeeded(currentItem: item)
                                 }
                             }
-                            .padding(.horizontal, 18)
-                            .padding(.bottom, 18)
+
+                            historyPaginationFooter
                         }
+                        .padding(.horizontal, 18)
+                        .padding(.top, 18)
+                        .padding(.bottom, 18)
                     }
                 }
             }
@@ -65,85 +47,15 @@ struct TranscriptionHistoryView: View {
         .task {
             store.ensureLoaded()
         }
-        .alert("Export failed", isPresented: Binding(
-            get: { exportErrorMessage != nil },
-            set: { isPresented in
-                if !isPresented {
-                    exportErrorMessage = nil
-                }
-            }
-        )) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(exportErrorMessage ?? "")
-        }
     }
 
-    private var historyHeader: some View {
-        HStack(alignment: .center, spacing: 12) {
-            Text(historySummary)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Spacer()
-
-            ForEach(TranscriptionExportFormat.allCases, id: \.self) { format in
-                Button(format.buttonTitle) {
-                    export(format)
-                }
-                .buttonStyle(NeutralActionButtonStyle())
-            }
-        }
-    }
-
-    private var historySummary: String {
-        if store.items.isEmpty {
-            return "Newest first"
-        }
-        return store.hasMoreItems ? "\(store.items.count)+ loaded" : "\(store.items.count) loaded"
-    }
-
-    private func export(_ format: TranscriptionExportFormat) {
-        Task {
-            do {
-                let data = try await store.exportAll(as: format)
-                try await saveExportData(data, as: format)
-            } catch {
-                await MainActor.run {
-                    exportErrorMessage = error.localizedDescription
-                }
-            }
-        }
-    }
-
-    @MainActor
-    private func saveExportData(_ data: Data, as format: TranscriptionExportFormat) throws {
-        let panel = NSSavePanel()
-        panel.canCreateDirectories = true
-        panel.isExtensionHidden = false
-        panel.nameFieldStringValue = suggestedExportFilename(for: format)
-        panel.title = format.buttonTitle
-        panel.allowedContentTypes = [contentType(for: format)]
-
-        guard panel.runModal() == .OK, let destinationURL = panel.url else {
-            return
-        }
-
-        try data.write(to: destinationURL, options: .atomic)
-    }
-
-    private func suggestedExportFilename(for format: TranscriptionExportFormat) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyyMMdd-HHmmss"
-        return "lemon-transcriptions-\(formatter.string(from: Date())).\(format.fileExtension)"
-    }
-
-    private func contentType(for format: TranscriptionExportFormat) -> UTType {
-        switch format {
-        case .csv:
-            return .commaSeparatedText
-        case .json:
-            return .json
+    @ViewBuilder
+    private var historyPaginationFooter: some View {
+        if store.isLoadingMorePages {
+            ProgressView("Loading older transcriptions…")
+                .lemonNeutralProgressTint()
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.top, 4)
         }
     }
 }
@@ -205,5 +117,67 @@ private struct HistoryActionButton: View {
         }
         .buttonStyle(NeutralIconButtonStyle(foreground: foreground))
         .accessibilityLabel(accessibilityLabel)
+    }
+}
+
+struct HistoryExportButton: View {
+    @ObservedObject var store: TranscriptionHistoryStore
+    @State private var exportErrorMessage: String?
+
+    var body: some View {
+        Button {
+            exportCSV()
+        } label: {
+            Image(systemName: "square.and.arrow.down")
+        }
+        .buttonStyle(NeutralIconButtonStyle())
+        .accessibilityLabel("Export transcriptions as CSV")
+        .alert("Export failed", isPresented: Binding(
+            get: { exportErrorMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    exportErrorMessage = nil
+                }
+            }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(exportErrorMessage ?? "")
+        }
+    }
+
+    private func exportCSV() {
+        Task {
+            do {
+                let data = try await store.exportAllCSV()
+                try await saveCSV(data)
+            } catch {
+                await MainActor.run {
+                    exportErrorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func saveCSV(_ data: Data) throws {
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.nameFieldStringValue = suggestedExportFilename
+        panel.title = "Export CSV"
+        panel.allowedContentTypes = [.commaSeparatedText]
+
+        guard panel.runModal() == .OK, let destinationURL = panel.url else {
+            return
+        }
+
+        try data.write(to: destinationURL, options: .atomic)
+    }
+
+    private var suggestedExportFilename: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return "lemon-transcriptions-\(formatter.string(from: Date())).csv"
     }
 }

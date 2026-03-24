@@ -147,7 +147,10 @@ struct ContentView: View {
         case .transcriptions:
             DetailContainer(
                 title: "Transcriptions",
-                onBack: navigationState.goHome
+                onBack: navigationState.goHome,
+                trailingContent: {
+                    HistoryExportButton(store: historyStore)
+                }
             ) {
                 TranscriptionHistoryView(store: historyStore)
             }
@@ -272,22 +275,35 @@ struct ContentView: View {
     }
 }
 
-private struct DetailContainer<Content: View>: View {
+private struct DetailContainer<Content: View, TrailingContent: View>: View {
     let title: String
     let subtitle: String?
     let onBack: () -> Void
+    let trailingContent: TrailingContent
     let content: Content
 
-    init(title: String, subtitle: String? = nil, onBack: @escaping () -> Void, @ViewBuilder content: () -> Content) {
+    init(
+        title: String,
+        subtitle: String? = nil,
+        onBack: @escaping () -> Void,
+        @ViewBuilder trailingContent: () -> TrailingContent,
+        @ViewBuilder content: () -> Content
+    ) {
         self.title = title
         self.subtitle = subtitle
         self.onBack = onBack
+        self.trailingContent = trailingContent()
         self.content = content()
+    }
+
+    init(title: String, subtitle: String? = nil, onBack: @escaping () -> Void, @ViewBuilder content: () -> Content)
+    where TrailingContent == EmptyView {
+        self.init(title: title, subtitle: subtitle, onBack: onBack, trailingContent: { EmptyView() }, content: content)
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .top, spacing: 14) {
+            HStack(alignment: .center, spacing: 14) {
                 Button {
                     onBack()
                 } label: {
@@ -307,10 +323,12 @@ private struct DetailContainer<Content: View>: View {
                 }
 
                 Spacer()
+
+                trailingContent
             }
             .padding(.horizontal, 20)
-            .padding(.top, 18)
-            .padding(.bottom, 16)
+            .padding(.top, 14)
+            .padding(.bottom, 14)
 
             Divider()
 

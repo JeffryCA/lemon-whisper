@@ -49,29 +49,6 @@ struct TranscriptionRecord: Identifiable, Hashable {
     }
 }
 
-enum TranscriptionExportFormat: CaseIterable {
-    case csv
-    case json
-
-    var buttonTitle: String {
-        switch self {
-        case .csv:
-            return "Export CSV"
-        case .json:
-            return "Export JSON"
-        }
-    }
-
-    var fileExtension: String {
-        switch self {
-        case .csv:
-            return "csv"
-        case .json:
-            return "json"
-        }
-    }
-}
-
 enum TranscriptionHistoryError: LocalizedError {
     case couldNotOpenDatabase(String)
     case statementPreparationFailed(String)
@@ -658,14 +635,9 @@ final class TranscriptionHistoryStore: ObservableObject {
         }
     }
 
-    func exportAll(as format: TranscriptionExportFormat) async throws -> Data {
+    func exportAllCSV() async throws -> Data {
         let records = try await database.fetchAll()
-        switch format {
-        case .csv:
-            return exportCSV(records).data(using: .utf8) ?? Data()
-        case .json:
-            return try exportJSON(records)
-        }
+        return Data(exportCSV(records).utf8)
     }
 
     func copyToClipboard(_ text: String) {
@@ -725,13 +697,6 @@ final class TranscriptionHistoryStore: ObservableObject {
         return ([header.joined(separator: ",")] + rows).joined(separator: "\n")
     }
 
-    private func exportJSON(_ records: [TranscriptionRecord]) throws -> Data {
-        let exported = records.map { ExportedRecord(record: $0) }
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        return try encoder.encode(exported)
-    }
-
     private static func escapeCSVField(_ value: String) -> String {
         let escaped = value.replacingOccurrences(of: "\"", with: "\"\"")
         return "\"\(escaped)\""
@@ -742,34 +707,4 @@ final class TranscriptionHistoryStore: ObservableObject {
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter
     }()
-}
-
-private struct ExportedRecord: Encodable {
-    let id: String
-    let createdAt: String
-    let text: String
-    let rawText: String
-    let correctedText: String?
-    let backend: String
-    let language: String
-    let targetBundleIdentifier: String?
-    let pasteStatus: String
-    let pastePath: String?
-    let pasteError: String?
-    let pasteCompletedAt: String?
-
-    init(record: TranscriptionRecord) {
-        id = record.id.uuidString
-        createdAt = TranscriptionHistoryStore.exportDateFormatter.string(from: record.createdAt)
-        text = record.displayText
-        rawText = record.rawText
-        correctedText = record.correctedText
-        backend = record.backend
-        language = record.language
-        targetBundleIdentifier = record.targetBundleIdentifier
-        pasteStatus = record.pasteStatus
-        pastePath = record.pastePath
-        pasteError = record.pasteError
-        pasteCompletedAt = record.pasteCompletedAt.map { TranscriptionHistoryStore.exportDateFormatter.string(from: $0) }
-    }
 }
