@@ -7,32 +7,13 @@ It lets you record from anywhere, transcribe speech on-device with local models,
 ## What It Does
 
 - Runs as a menu bar app instead of a full dock app.
-- Records microphone audio with `Ctrl+Y` or the menu bar menu.
+- Start/Stop recording audio with `Ctrl+Y`.
 - Transcribes locally with either Whisper or Voxtral.
-- Downloads and manages models inside the app.
+- Downloads and manages models inside the app (Voxtral Mini 3B 4-bit recommended).
 - Switches between downloaded models without external scripts.
 - Shows lightweight recording and transcription HUDs near the cursor.
-- Saves recent transcriptions locally and lets you copy or delete them.
+- Saves recent transcriptions locally and lets you copy, delete or export them.
 - Auto-pastes the transcript back into the field you started recording from.
-
-## Current Product Shape
-
-LemonWhisper handles the full dictation loop locally:
-
-1. Start recording.
-2. Speak.
-3. Stop recording.
-4. The app transcribes locally.
-5. The transcript is copied to the clipboard and auto-pasted back into the field you started from.
-
-It currently uses:
-
-- Whisper
-- Voxtral
-
-Recommended starting point:
-
-- Voxtral Mini 3B 4-bit
 
 ## Requirements
 
