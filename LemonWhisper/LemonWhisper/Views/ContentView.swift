@@ -43,7 +43,7 @@ struct ContentView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(LemonChrome.windowBackground)
         .frame(
             minWidth: minimumContentWidth,
             idealWidth: idealContentWidth
@@ -90,7 +90,7 @@ struct ContentView: View {
     }
 
     private var statusLine: String {
-        "Process memory: \(controller.processMemoryMB) MB"
+        controller.statusLineText
     }
 
     private func loadModels() async {
@@ -158,6 +158,20 @@ struct ContentView: View {
 
     private var homeContent: some View {
         VStack(spacing: 0) {
+            if controller.showsSetupCard {
+                SetupStatusCard(
+                    title: controller.setupCardTitle,
+                    message: controller.setupCardMessage,
+                    progress: controller.setupCardProgress,
+                    showsProgress: controller.setupCardShowsProgress
+                ) {
+                    navigationState.show(.manageModels)
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 20)
+                .padding(.bottom, 12)
+            }
+
             HomeSettingsCard {
                 HomeValueRow(title: "Language") {
                     Picker("", selection: $controller.selectedLanguageCode) {
@@ -219,18 +233,15 @@ struct ContentView: View {
                 .buttonStyle(.plain)
             }
             .padding(.horizontal, 20)
-            .padding(.top, 20)
+            .padding(.top, controller.showsSetupCard ? 0 : 20)
             .padding(.bottom, 12)
         }
         .frame(maxWidth: .infinity, alignment: .top)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(LemonChrome.windowBackground)
     }
 
     private var transcriptionSummary: String {
-        if historyStore.items.isEmpty {
-            return "No saved transcriptions yet"
-        }
-        return "\(historyStore.items.count) saved"
+        "Recent history"
     }
 
     private var modelStatusSummary: String {
@@ -345,10 +356,44 @@ private struct HomeSettingsCard<Content: View>: View {
         VStack(spacing: 0) {
             content
         }
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor))
-        )
+        .lemonSurface()
+    }
+}
+
+private struct SetupStatusCard: View {
+    let title: String
+    let message: String
+    let progress: Double?
+    let showsProgress: Bool
+    let onManageModels: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(title)
+                .font(.title3.weight(.semibold))
+
+            Text(message)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if showsProgress {
+                if let progress {
+                    ProgressView(value: progress)
+                        .progressViewStyle(.linear)
+                        .lemonNeutralProgressTint()
+                } else {
+                    ProgressView()
+                        .progressViewStyle(.linear)
+                        .lemonNeutralProgressTint()
+                }
+            }
+
+            Button("Manage local models", action: onManageModels)
+                .buttonStyle(NeutralActionButtonStyle())
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .lemonSurface()
     }
 }
 
@@ -474,7 +519,7 @@ private struct ManageModelsView: View {
             .padding(20)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(LemonChrome.windowBackground)
     }
 
     private func isDownloaded(_ model: LocalModelItem) -> Bool {
@@ -546,10 +591,7 @@ private struct ModelSectionCard<Content: View>: View {
             .padding(.horizontal, 16)
             .padding(.bottom, 12)
         }
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor))
-        )
+        .lemonSurface()
     }
 }
 
@@ -573,7 +615,8 @@ private struct DownloadedModelRow: View {
             Button(role: .destructive, action: onRemove) {
                 Image(systemName: "trash")
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(NeutralIconButtonStyle(foreground: .secondary))
+            .accessibilityLabel("Remove model")
         }
         .padding(.vertical, 10)
     }
@@ -604,19 +647,18 @@ private struct AvailableModelRow: View {
                 Spacer(minLength: 12)
 
                 Button(isBusy ? "Downloading..." : "Download", action: onDownload)
+                    .buttonStyle(NeutralActionButtonStyle())
                     .disabled(isBusy)
             }
 
             if let progress, isBusy {
-                HStack(spacing: 8) {
-                    ProgressView(value: progress)
-                        .progressViewStyle(.linear)
-
-                    Text("\(Int(progress * 100))%")
-                        .font(.caption2)
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                }
+                ProgressView(value: progress)
+                    .progressViewStyle(.linear)
+                    .lemonNeutralProgressTint()
+            } else if isBusy {
+                ProgressView()
+                    .progressViewStyle(.linear)
+                    .lemonNeutralProgressTint()
             }
         }
         .padding(.vertical, 10)

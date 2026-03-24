@@ -1,38 +1,149 @@
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 
 struct TranscriptionHistoryView: View {
     @ObservedObject var store: TranscriptionHistoryStore
+    @State private var exportErrorMessage: String?
 
     var body: some View {
         ZStack {
-            Color(nsColor: .windowBackgroundColor)
+            LemonChrome.windowBackground
                 .ignoresSafeArea()
 
-            Group {
-                if store.items.isEmpty {
-                    ContentUnavailableView(
-                        "No transcriptions yet",
-                        systemImage: "text.bubble",
-                        description: Text(store.lastError ?? "Saved transcriptions will appear here after you stop a recording.")
-                    )
-                } else {
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 14) {
-                            ForEach(store.items) { item in
-                                TranscriptionHistoryCard(
-                                    item: item,
-                                    onCopy: { store.copyToClipboard(item) },
-                                    onDelete: { store.delete(item) }
-                                )
+            VStack(spacing: 0) {
+                historyHeader
+                    .padding(.horizontal, 18)
+                    .padding(.top, 18)
+                    .padding(.bottom, 12)
+
+                Group {
+                    if store.isLoadingInitialPage && store.items.isEmpty {
+                        ProgressView("Loading transcriptions…")
+                            .lemonNeutralProgressTint()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                    } else if store.items.isEmpty {
+                        ContentUnavailableView(
+                            "No transcriptions yet",
+                            systemImage: "text.bubble",
+                            description: Text(store.lastError ?? "Saved transcriptions will appear here after you stop a recording.")
+                        )
+                    } else {
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 14) {
+                                ForEach(store.items) { item in
+                                    TranscriptionHistoryCard(
+                                        item: item,
+                                        onCopy: { store.copyToClipboard(item) },
+                                        onDelete: { store.delete(item) }
+                                    )
+                                    .task(id: item.id) {
+                                        await store.loadMoreIfNeeded(currentItem: item)
+                                    }
+                                }
+
+                                if store.isLoadingMorePages {
+                                    ProgressView("Loading older transcriptions…")
+                                        .lemonNeutralProgressTint()
+                                        .frame(maxWidth: .infinity, alignment: .center)
+                                        .padding(.top, 4)
+                                } else if store.hasMoreItems {
+                                    Text("Scroll down to load older transcriptions")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .frame(maxWidth: .infinity, alignment: .center)
+                                        .padding(.top, 4)
+                                }
                             }
+                            .padding(.horizontal, 18)
+                            .padding(.bottom, 18)
                         }
-                        .padding(18)
                     }
                 }
             }
         }
         .task {
-            await store.loadRecent()
+            store.ensureLoaded()
+        }
+        .alert("Export failed", isPresented: Binding(
+            get: { exportErrorMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    exportErrorMessage = nil
+                }
+            }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(exportErrorMessage ?? "")
+        }
+    }
+
+    private var historyHeader: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Text(historySummary)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Spacer()
+
+            ForEach(TranscriptionExportFormat.allCases, id: \.self) { format in
+                Button(format.buttonTitle) {
+                    export(format)
+                }
+                .buttonStyle(NeutralActionButtonStyle())
+            }
+        }
+    }
+
+    private var historySummary: String {
+        if store.items.isEmpty {
+            return "Newest first"
+        }
+        return store.hasMoreItems ? "\(store.items.count)+ loaded" : "\(store.items.count) loaded"
+    }
+
+    private func export(_ format: TranscriptionExportFormat) {
+        Task {
+            do {
+                let data = try await store.exportAll(as: format)
+                try await saveExportData(data, as: format)
+            } catch {
+                await MainActor.run {
+                    exportErrorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func saveExportData(_ data: Data, as format: TranscriptionExportFormat) throws {
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.nameFieldStringValue = suggestedExportFilename(for: format)
+        panel.title = format.buttonTitle
+        panel.allowedContentTypes = [contentType(for: format)]
+
+        guard panel.runModal() == .OK, let destinationURL = panel.url else {
+            return
+        }
+
+        try data.write(to: destinationURL, options: .atomic)
+    }
+
+    private func suggestedExportFilename(for format: TranscriptionExportFormat) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return "lemon-transcriptions-\(formatter.string(from: Date())).\(format.fileExtension)"
+    }
+
+    private func contentType(for format: TranscriptionExportFormat) -> UTType {
+        switch format {
+        case .csv:
+            return .commaSeparatedText
+        case .json:
+            return .json
         }
     }
 }
@@ -57,7 +168,6 @@ private struct TranscriptionHistoryCard: View {
                     HistoryActionButton(
                         systemName: "doc.on.doc",
                         foreground: .primary,
-                        background: Color(nsColor: .windowBackgroundColor),
                         accessibilityLabel: "Copy transcription",
                         action: onCopy
                     )
@@ -65,7 +175,6 @@ private struct TranscriptionHistoryCard: View {
                     HistoryActionButton(
                         systemName: "trash",
                         foreground: .secondary,
-                        background: Color(nsColor: .windowBackgroundColor),
                         accessibilityLabel: "Delete transcription",
                         action: onDelete
                     )
@@ -80,41 +189,21 @@ private struct TranscriptionHistoryCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .stroke(Color(nsColor: .separatorColor).opacity(0.35), lineWidth: 1)
-                )
-                .shadow(color: Color.black.opacity(0.08), radius: 10, x: 0, y: 4)
-        )
+        .lemonSurface(cornerRadius: 20, showsBorder: true, showsShadow: true)
     }
 }
 
 private struct HistoryActionButton: View {
     let systemName: String
     let foreground: Color
-    let background: Color
     let accessibilityLabel: String
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 13, weight: .semibold))
-                .frame(width: 34, height: 34)
-                .foregroundStyle(foreground)
-                .background(
-                    Circle()
-                        .fill(background)
-                )
-                .overlay(
-                    Circle()
-                        .stroke(Color(nsColor: .separatorColor).opacity(0.35), lineWidth: 1)
-                )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(NeutralIconButtonStyle(foreground: foreground))
         .accessibilityLabel(accessibilityLabel)
     }
 }

@@ -31,38 +31,6 @@ struct TranscriptionRecord: Identifiable, Hashable {
         createdAt.formatted(date: .abbreviated, time: .shortened)
     }
 
-    var backendLabel: String {
-        backend.capitalized
-    }
-
-    var languageLabel: String {
-        language == "auto" ? "Auto" : language.uppercased()
-    }
-
-    var pasteStatusLabel: String {
-        switch pasteStatus {
-        case "succeeded":
-            return "Paste OK"
-        case "failed":
-            return "Paste Failed"
-        case "pending":
-            return "Paste Pending"
-        default:
-            return "Paste Unknown"
-        }
-    }
-
-    var pasteMetadataLabel: String? {
-        var components: [String] = []
-        if let pastePath, !pastePath.isEmpty {
-            components.append(pastePath)
-        }
-        if let targetBundleIdentifier, !targetBundleIdentifier.isEmpty {
-            components.append(targetBundleIdentifier)
-        }
-        return components.isEmpty ? nil : components.joined(separator: "  •  ")
-    }
-
     var menuTitle: String {
         "\(timestampLabel)  \(excerpt(maxLength: 72))"
     }
@@ -78,6 +46,29 @@ struct TranscriptionRecord: Identifiable, Hashable {
         }
 
         return String(normalized.prefix(maxLength - 3)) + "..."
+    }
+}
+
+enum TranscriptionExportFormat: CaseIterable {
+    case csv
+    case json
+
+    var buttonTitle: String {
+        switch self {
+        case .csv:
+            return "Export CSV"
+        case .json:
+            return "Export JSON"
+        }
+    }
+
+    var fileExtension: String {
+        switch self {
+        case .csv:
+            return "csv"
+        case .json:
+            return "json"
+        }
     }
 }
 
@@ -185,7 +176,7 @@ actor TranscriptionHistoryDatabase {
         return record
     }
 
-    func fetchLatest(limit: Int = 100) throws -> [TranscriptionRecord] {
+    func fetchLatest(limit: Int, offset: Int = 0) throws -> [TranscriptionRecord] {
         let sql = """
         SELECT
             id,
@@ -201,14 +192,43 @@ actor TranscriptionHistoryDatabase {
             paste_completed_at
         FROM transcriptions
         ORDER BY created_at DESC
-        LIMIT ?;
+        LIMIT ? OFFSET ?;
         """
 
         let statement = try prepareStatement(sql)
         defer { sqlite3_finalize(statement) }
 
         sqlite3_bind_int(statement, 1, Int32(limit))
+        sqlite3_bind_int(statement, 2, Int32(offset))
 
+        return readRecords(from: statement)
+    }
+
+    func fetchAll() throws -> [TranscriptionRecord] {
+        let sql = """
+        SELECT
+            id,
+            raw_text,
+            corrected_text,
+            created_at,
+            backend,
+            language,
+            target_bundle_identifier,
+            paste_status,
+            paste_path,
+            paste_error,
+            paste_completed_at
+        FROM transcriptions
+        ORDER BY created_at DESC;
+        """
+
+        let statement = try prepareStatement(sql)
+        defer { sqlite3_finalize(statement) }
+
+        return readRecords(from: statement)
+    }
+
+    private func readRecords(from statement: OpaquePointer?) -> [TranscriptionRecord] {
         var records: [TranscriptionRecord] = []
         while sqlite3_step(statement) == SQLITE_ROW {
             guard
@@ -495,9 +515,13 @@ actor TranscriptionHistoryDatabase {
 @MainActor
 final class TranscriptionHistoryStore: ObservableObject {
     static let shared = TranscriptionHistoryStore()
+    private static let pageSize = 100
 
     @Published private(set) var items: [TranscriptionRecord] = []
     @Published private(set) var lastError: String?
+    @Published private(set) var hasMoreItems = false
+    @Published private(set) var isLoadingInitialPage = false
+    @Published private(set) var isLoadingMorePages = false
 
     private let database: TranscriptionHistoryDatabase
     private var hasLoaded = false
@@ -509,13 +533,43 @@ final class TranscriptionHistoryStore: ObservableObject {
     func ensureLoaded() {
         guard !hasLoaded else { return }
         Task {
-            await loadRecent()
+            await loadInitialPage()
         }
     }
 
-    func loadRecent(limit: Int = 100) async {
+    func loadInitialPage() async {
+        guard !isLoadingInitialPage else { return }
+        isLoadingInitialPage = true
+        defer { isLoadingInitialPage = false }
+
+        await loadPage(reset: true)
+    }
+
+    func loadMoreIfNeeded(currentItem: TranscriptionRecord? = nil) async {
+        guard hasLoaded, hasMoreItems, !isLoadingInitialPage, !isLoadingMorePages else { return }
+        if let currentItem, currentItem.id != items.last?.id {
+            return
+        }
+
+        isLoadingMorePages = true
+        defer { isLoadingMorePages = false }
+
+        await loadPage(reset: false)
+    }
+
+    private func loadPage(reset: Bool) async {
         do {
-            items = try await database.fetchLatest(limit: limit)
+            let offset = reset ? 0 : items.count
+            let batch = try await database.fetchLatest(limit: Self.pageSize + 1, offset: offset)
+            let page = Array(batch.prefix(Self.pageSize))
+
+            if reset {
+                items = page
+            } else {
+                items.append(contentsOf: page)
+            }
+
+            hasMoreItems = batch.count > Self.pageSize
             lastError = nil
             hasLoaded = true
         } catch {
@@ -540,9 +594,6 @@ final class TranscriptionHistoryStore: ObservableObject {
                 targetBundleIdentifier: targetBundleIdentifier
             )
             items.insert(record, at: 0)
-            if items.count > 200 {
-                items.removeSubrange(200...)
-            }
             lastError = nil
             hasLoaded = true
             return record
@@ -602,8 +653,18 @@ final class TranscriptionHistoryStore: ObservableObject {
                 lastError = nil
             } catch {
                 lastError = error.localizedDescription
-                await loadRecent()
+                await loadInitialPage()
             }
+        }
+    }
+
+    func exportAll(as format: TranscriptionExportFormat) async throws -> Data {
+        let records = try await database.fetchAll()
+        switch format {
+        case .csv:
+            return exportCSV(records).data(using: .utf8) ?? Data()
+        case .json:
+            return try exportJSON(records)
         }
     }
 
@@ -614,5 +675,101 @@ final class TranscriptionHistoryStore: ObservableObject {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(sanitized, forType: .string)
+    }
+
+    var menuHistoryFooterText: String? {
+        if hasMoreItems {
+            return "More in History"
+        }
+
+        let extraLoadedItems = items.count - min(items.count, 10)
+        guard extraLoadedItems > 0 else { return nil }
+        return "\(extraLoadedItems) more in History"
+    }
+
+    private func exportCSV(_ records: [TranscriptionRecord]) -> String {
+        let header = [
+            "id",
+            "created_at",
+            "text",
+            "raw_text",
+            "corrected_text",
+            "backend",
+            "language",
+            "target_bundle_identifier",
+            "paste_status",
+            "paste_path",
+            "paste_error",
+            "paste_completed_at"
+        ]
+
+        let rows = records.map { record in
+            [
+                record.id.uuidString,
+                Self.exportDateFormatter.string(from: record.createdAt),
+                record.displayText,
+                record.rawText,
+                record.correctedText ?? "",
+                record.backend,
+                record.language,
+                record.targetBundleIdentifier ?? "",
+                record.pasteStatus,
+                record.pastePath ?? "",
+                record.pasteError ?? "",
+                record.pasteCompletedAt.map { Self.exportDateFormatter.string(from: $0) } ?? ""
+            ]
+            .map(Self.escapeCSVField)
+            .joined(separator: ",")
+        }
+
+        return ([header.joined(separator: ",")] + rows).joined(separator: "\n")
+    }
+
+    private func exportJSON(_ records: [TranscriptionRecord]) throws -> Data {
+        let exported = records.map { ExportedRecord(record: $0) }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return try encoder.encode(exported)
+    }
+
+    private static func escapeCSVField(_ value: String) -> String {
+        let escaped = value.replacingOccurrences(of: "\"", with: "\"\"")
+        return "\"\(escaped)\""
+    }
+
+    fileprivate static let exportDateFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+}
+
+private struct ExportedRecord: Encodable {
+    let id: String
+    let createdAt: String
+    let text: String
+    let rawText: String
+    let correctedText: String?
+    let backend: String
+    let language: String
+    let targetBundleIdentifier: String?
+    let pasteStatus: String
+    let pastePath: String?
+    let pasteError: String?
+    let pasteCompletedAt: String?
+
+    init(record: TranscriptionRecord) {
+        id = record.id.uuidString
+        createdAt = TranscriptionHistoryStore.exportDateFormatter.string(from: record.createdAt)
+        text = record.displayText
+        rawText = record.rawText
+        correctedText = record.correctedText
+        backend = record.backend
+        language = record.language
+        targetBundleIdentifier = record.targetBundleIdentifier
+        pasteStatus = record.pasteStatus
+        pastePath = record.pastePath
+        pasteError = record.pasteError
+        pasteCompletedAt = record.pasteCompletedAt.map { TranscriptionHistoryStore.exportDateFormatter.string(from: $0) }
     }
 }

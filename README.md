@@ -71,14 +71,6 @@ LemonWhisper needs:
 
 If Accessibility is not enabled yet, the app will prompt for it.
 
-## Transcription Backends
-
-LemonWhisper uses local Whisper and Voxtral models.
-
-If you are not sure which Voxtral model to pick, start with:
-
-- `mini-3b-4bit`
-
 ## Local Storage
 
 LemonWhisper stores app data under:

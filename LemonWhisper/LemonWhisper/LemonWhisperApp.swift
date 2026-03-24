@@ -20,12 +20,66 @@ private func hotKeyHandler(
     return noErr
 }
 
+private enum SetupState: Equatable {
+    case ready
+    case firstRunDownloadingDefaultModel
+    case preparingSelectedModel
+    case blocked(message: String)
+
+    var isBlocking: Bool {
+        if case .ready = self {
+            return false
+        }
+        return true
+    }
+
+    var cardTitle: String? {
+        switch self {
+        case .ready:
+            return nil
+        case .firstRunDownloadingDefaultModel:
+            return "Setting up Lemon Whisper"
+        case .preparingSelectedModel:
+            return "Preparing your model"
+        case .blocked:
+            return "Model not ready"
+        }
+    }
+
+    var cardMessage: String? {
+        switch self {
+        case .ready:
+            return nil
+        case .firstRunDownloadingDefaultModel:
+            return "Lemon Whisper is downloading Voxtral Mini 3B 4-bit for first use. Recording stays disabled until the model is ready."
+        case .preparingSelectedModel:
+            return "Your selected model is being prepared. Recording stays disabled until setup finishes."
+        case .blocked(let message):
+            return message
+        }
+    }
+
+    var idleButtonTitle: String {
+        switch self {
+        case .ready:
+            return "Start Recording (Ctrl+Y)"
+        case .firstRunDownloadingDefaultModel:
+            return "Downloading First Model…"
+        case .preparingSelectedModel:
+            return "Preparing Model…"
+        case .blocked:
+            return "Model Not Ready Yet"
+        }
+    }
+}
+
 @MainActor
 final class LemonWhisperController: ObservableObject {
     @Published var isRecording = false
     @Published var selectedLanguageCode = "en"
-    @Published var selectedBackend: TranscriptionBackend = .whisper
+    @Published var selectedBackend: TranscriptionBackend = .voxtral
     @Published var isPreparingVoxtral = false
+    @Published private var setupState: SetupState = .preparingSelectedModel
     @Published var processMemoryMB: Int = 0
 
     @Published var selectedWhisperModelID: String = WhisperModelCatalog.selectedModelID()
@@ -46,6 +100,8 @@ final class LemonWhisperController: ObservableObject {
     private var targetProcessID: pid_t?
     private var toggleHotKeyRef: EventHotKeyRef?
     private var statusTimer: Timer?
+    private let selectedBackendDefaultsKey = "selectedTranscriptionBackend"
+    private let previewInitialSetup: Bool
 
     struct LanguageOption: Identifiable {
         let id: String
@@ -77,7 +133,8 @@ final class LemonWhisperController: ObservableObject {
         }
     }
 
-    init() {
+    init(launchArguments: Set<String> = Set(CommandLine.arguments)) {
+        self.previewInitialSetup = launchArguments.contains("--codex-preview-initial-setup")
         logMicrophonePermissionState()
         requestAccessibilityPermission()
         setupHotKeys()
@@ -85,6 +142,13 @@ final class LemonWhisperController: ObservableObject {
         startStatusPolling()
 
         Task { @MainActor in
+            if previewInitialSetup {
+                selectedBackend = .voxtral
+                selectedVoxtralModelID = VoxtralService.defaultModelID
+                voxtralStatus = "Previewing first-run setup."
+                setupState = .firstRunDownloadingDefaultModel
+                return
+            }
             WhisperModelCatalog.cleanupInterruptedDownloads()
             await VoxtralService.shared.cleanupInterruptedDownloads()
             await initializeModelsAndBackend()
@@ -100,6 +164,7 @@ final class LemonWhisperController: ObservableObject {
             return
         }
 
+        guard canStartNewRecording else { return }
         startRecordingIfPermitted()
     }
 
@@ -154,12 +219,13 @@ final class LemonWhisperController: ObservableObject {
         switch backend {
         case .whisper:
             selectedBackend = .whisper
-            UserDefaults.standard.set(TranscriptionBackend.whisper.rawValue, forKey: "selectedTranscriptionBackend")
+            UserDefaults.standard.set(TranscriptionBackend.whisper.rawValue, forKey: selectedBackendDefaultsKey)
             Task {
                 await VoxtralService.shared.unload()
             }
             preloadWhisperIfNeeded()
         case .voxtral:
+            setupState = .preparingSelectedModel
             Task { @MainActor in
                 await prepareAndMaybeSwitchToVoxtral()
             }
@@ -196,6 +262,10 @@ final class LemonWhisperController: ObservableObject {
             return
         }
 
+        if selectedBackend == .whisper && selectedWhisperModelID == id {
+            setupState = .preparingSelectedModel
+        }
+
         whisperOperationsInFlight.insert(id)
         whisperDownloadProgress[id] = 0
         whisperStatus = "Downloading \(option.title)..."
@@ -214,11 +284,16 @@ final class LemonWhisperController: ObservableObject {
                 }
                 whisperStatus = "Downloaded \(option.title)"
                 refreshWhisperDownloads()
-                if selectedWhisperModelID == id {
+                if selectedBackend == .whisper && selectedWhisperModelID == id {
+                    preloadWhisperIfNeeded()
+                } else if selectedWhisperModelID == id {
                     WhisperContext.clearShared()
                 }
             } catch {
                 whisperStatus = "Whisper download failed: \(error.localizedDescription)"
+                if selectedBackend == .whisper && selectedWhisperModelID == id {
+                    setupState = .blocked(message: whisperStatus ?? "Whisper download failed.")
+                }
             }
         }
     }
@@ -243,6 +318,14 @@ final class LemonWhisperController: ObservableObject {
                 }
                 WhisperContext.clearShared()
             }
+
+            if selectedBackend == .whisper {
+                if downloadedWhisperModels.contains(where: { $0.id == selectedWhisperModelID }) {
+                    preloadWhisperIfNeeded()
+                } else {
+                    setupState = .blocked(message: "Download a Whisper model to use Whisper.")
+                }
+            }
         } catch {
             whisperStatus = "Could not remove \(option.title): \(error.localizedDescription)"
         }
@@ -250,8 +333,13 @@ final class LemonWhisperController: ObservableObject {
 
     func downloadVoxtralModel(_ id: String) {
         guard !voxtralOperationsInFlight.contains(id) else { return }
+
+        if id == selectedVoxtralModelID {
+            setupState = hasAnyDownloadedModels ? .preparingSelectedModel : .firstRunDownloadingDefaultModel
+        }
+
         voxtralOperationsInFlight.insert(id)
-        voxtralDownloadProgress[id] = 0
+        voxtralDownloadProgress[id] = nil
         voxtralStatus = "Downloading Voxtral model..."
 
         Task { @MainActor in
@@ -262,10 +350,9 @@ final class LemonWhisperController: ObservableObject {
 
             do {
                 try await VoxtralService.shared.downloadModel(id) { progress, status in
-                    let pct = Int(progress * 100)
                     Task { @MainActor in
-                        self.voxtralDownloadProgress[id] = progress
-                        self.voxtralStatus = "[\(pct)%] \(status)"
+                        self.voxtralDownloadProgress[id] = progress >= 1 ? progress : nil
+                        self.voxtralStatus = status
                     }
                 }
                 voxtralStatus = "Voxtral model downloaded"
@@ -275,6 +362,9 @@ final class LemonWhisperController: ObservableObject {
                 }
             } catch {
                 voxtralStatus = "Voxtral download failed: \(error.localizedDescription)"
+                if id == selectedVoxtralModelID {
+                    setupState = .blocked(message: voxtralStatus ?? "Voxtral download failed.")
+                }
             }
         }
     }
@@ -282,9 +372,10 @@ final class LemonWhisperController: ObservableObject {
     func removeVoxtralModel(_ id: String) {
         guard !voxtralOperationsInFlight.contains(id) else { return }
         voxtralOperationsInFlight.insert(id)
-        defer { voxtralOperationsInFlight.remove(id) }
 
         Task { @MainActor in
+            defer { voxtralOperationsInFlight.remove(id) }
+
             do {
                 try await VoxtralService.shared.removeModel(id)
                 voxtralStatus = "Voxtral model removed"
@@ -293,6 +384,14 @@ final class LemonWhisperController: ObservableObject {
                 if selectedVoxtralModelID == id {
                     if let fallback = downloadedVoxtralModels.first {
                         await selectVoxtralModel(fallback.id)
+                    }
+                }
+
+                if selectedBackend == .voxtral {
+                    if downloadedVoxtralModels.contains(where: { $0.id == selectedVoxtralModelID }) {
+                        _ = await prepareAndMaybeSwitchToVoxtral()
+                    } else {
+                        setupState = .blocked(message: "Download a Voxtral model to use Voxtral.")
                     }
                 }
             } catch {
@@ -343,29 +442,26 @@ final class LemonWhisperController: ObservableObject {
         refreshWhisperDownloads()
         await refreshVoxtralDownloads()
 
-        if !downloadedVoxtralModels.contains(where: { $0.id == selectedVoxtralModelID }) {
-            voxtralStatus = "Downloading Voxtral Mini 3B (4-bit mixed) by default..."
+        if !hasAnyDownloadedModels {
+            selectedBackend = .voxtral
+            setupState = .firstRunDownloadingDefaultModel
+            voxtralStatus = "Downloading Voxtral Mini 3B 4-bit..."
             downloadVoxtralModel(selectedVoxtralModelID)
-            ensureWhisperFallbackIfNeeded()
             return
         }
 
-        if await prepareAndMaybeSwitchToVoxtral() {
-            return
+        switch storedBackendPreference() {
+        case .voxtral:
+            if await activateSelectedVoxtralIfAvailable() {
+                return
+            }
+            setupState = .blocked(message: "Download a Voxtral model to use Voxtral.")
+        case .whisper:
+            if activateSelectedWhisperIfAvailable() {
+                return
+            }
+            setupState = .blocked(message: "Download a Whisper model to use Whisper.")
         }
-
-        ensureWhisperFallbackIfNeeded()
-    }
-
-    private func ensureWhisperFallbackIfNeeded() {
-        if downloadedWhisperModels.isEmpty,
-           let defaultOption = WhisperModelCatalog.option(for: WhisperModelCatalog.defaultModelID) {
-            whisperStatus = "Downloading Whisper fallback model..."
-            downloadWhisperModel(defaultOption.id)
-            return
-        }
-
-        preloadWhisperIfNeeded()
     }
 
     private func refreshWhisperDownloads() {
@@ -380,13 +476,21 @@ final class LemonWhisperController: ObservableObject {
     private func refreshVoxtralDownloads() async {
         downloadedVoxtralModels = await VoxtralService.shared.downloadedModels()
         selectedVoxtralModelID = await VoxtralService.shared.currentSelectedModelID()
+
+        if !downloadedVoxtralModels.contains(where: { $0.id == selectedVoxtralModelID }),
+           let fallback = downloadedVoxtralModels.first {
+            await selectVoxtralModel(fallback.id)
+        }
     }
 
     private func preloadWhisperIfNeeded() {
-        Task {
+        setupState = .preparingSelectedModel
+        Task { @MainActor in
             do {
                 guard let selected = WhisperModelCatalog.selectedModelIfDownloaded() else {
-                    print("❌ No downloaded Whisper model available")
+                    let message = "Download a Whisper model to use Whisper."
+                    whisperStatus = message
+                    setupState = .blocked(message: message)
                     return
                 }
 
@@ -395,9 +499,12 @@ final class LemonWhisperController: ObservableObject {
                 if let context = WhisperContext.getShared() {
                     await context.setVADModelPath(WhisperModelCatalog.vadLocalURL.path)
                 }
-                print("✅ Whisper model ready: \(selected.title)")
+                whisperStatus = "Whisper ready: \(selected.title)"
+                setupState = .ready
             } catch {
-                print("❌ Failed to load Whisper model: \(error)")
+                let message = "Failed to load Whisper: \(error.localizedDescription)"
+                whisperStatus = message
+                setupState = .blocked(message: message)
             }
         }
     }
@@ -409,42 +516,162 @@ final class LemonWhisperController: ObservableObject {
         }
 
         guard downloadedVoxtralModels.contains(where: { $0.id == selectedVoxtralModelID }) else {
-            voxtralStatus = "Voxtral Mini 3B (4-bit mixed) is still downloading."
+            if hasAnyDownloadedModels {
+                let message = "Download a Voxtral model to use Voxtral."
+                voxtralStatus = message
+                setupState = .blocked(message: message)
+            } else {
+                voxtralStatus = "Downloading Voxtral Mini 3B 4-bit..."
+                setupState = .firstRunDownloadingDefaultModel
+            }
             return false
         }
 
         if await VoxtralService.shared.isReady {
             selectedBackend = .voxtral
-            UserDefaults.standard.set(TranscriptionBackend.voxtral.rawValue, forKey: "selectedTranscriptionBackend")
+            UserDefaults.standard.set(TranscriptionBackend.voxtral.rawValue, forKey: selectedBackendDefaultsKey)
+            setupState = .ready
             print("✅ Voxtral is ready. Switched backend.")
             return true
         }
 
         isPreparingVoxtral = true
+        setupState = .preparingSelectedModel
         print("⏳ Preparing Voxtral in background.")
         defer { isPreparingVoxtral = false }
 
         do {
             try await VoxtralService.shared.warmupModel()
             selectedBackend = .voxtral
-            UserDefaults.standard.set(TranscriptionBackend.voxtral.rawValue, forKey: "selectedTranscriptionBackend")
+            UserDefaults.standard.set(TranscriptionBackend.voxtral.rawValue, forKey: selectedBackendDefaultsKey)
+            setupState = .ready
             print("✅ Voxtral ready. Switched backend.")
             return true
         } catch {
-            selectedBackend = .whisper
-            UserDefaults.standard.set(TranscriptionBackend.whisper.rawValue, forKey: "selectedTranscriptionBackend")
+            let message: String
             if let details = await VoxtralService.shared.latestError {
-                print("❌ Voxtral preparation failed. Staying on Whisper: \(details)")
+                message = "Failed to load Voxtral: \(details)"
             } else {
-                print("❌ Voxtral preparation failed. Staying on Whisper: \(error.localizedDescription)")
+                message = "Failed to load Voxtral: \(error.localizedDescription)"
             }
+            print("❌ Voxtral preparation failed: \(message)")
             await VoxtralService.shared.unload()
+            selectedBackend = .voxtral
+            voxtralStatus = message
+            setupState = .blocked(message: message)
             return false
         }
     }
 
     var canSelectVoxtralNow: Bool {
         !isPreparingVoxtral
+    }
+
+    var hasAnyDownloadedModels: Bool {
+        !downloadedWhisperModels.isEmpty || !downloadedVoxtralModels.isEmpty
+    }
+
+    var showsSetupCard: Bool {
+        setupState.isBlocking
+    }
+
+    var setupCardTitle: String {
+        setupState.cardTitle ?? "Model not ready"
+    }
+
+    var setupCardMessage: String {
+        setupState.cardMessage ?? ""
+    }
+
+    var setupCardProgress: Double? {
+        switch setupState {
+        case .firstRunDownloadingDefaultModel:
+            if previewInitialSetup {
+                return 0.42
+            }
+            return voxtralDownloadProgress[selectedVoxtralModelID]
+        case .ready, .preparingSelectedModel, .blocked:
+            return nil
+        }
+    }
+
+    var setupCardShowsProgress: Bool {
+        switch setupState {
+        case .ready, .blocked:
+            return false
+        case .firstRunDownloadingDefaultModel, .preparingSelectedModel:
+            return true
+        }
+    }
+
+    var statusLineText: String {
+        setupStatusLine ?? "Process memory: \(processMemoryMB) MB"
+    }
+
+    private var setupStatusLine: String? {
+        switch setupState {
+        case .ready:
+            return nil
+        case .firstRunDownloadingDefaultModel:
+            if let status = voxtralStatus, !status.isEmpty {
+                return status
+            }
+            return "Downloading Voxtral Mini 3B 4-bit..."
+        case .preparingSelectedModel:
+            if selectedBackend == .whisper,
+               let status = whisperStatus,
+               !status.isEmpty {
+                return status
+            }
+            if let status = voxtralStatus, !status.isEmpty {
+                return status
+            }
+            return selectedBackend == .whisper ? "Preparing Whisper..." : "Preparing Voxtral Mini 3B 4-bit..."
+        case .blocked(let message):
+            return message
+        }
+    }
+
+    var canStartNewRecording: Bool {
+        if case .ready = setupState {
+            return true
+        }
+        return false
+    }
+
+    var recordingButtonTitle: String {
+        if isRecording {
+            return "Stop Recording"
+        }
+        return setupState.idleButtonTitle
+    }
+
+    private func storedBackendPreference() -> TranscriptionBackend {
+        guard
+            let rawValue = UserDefaults.standard.string(forKey: selectedBackendDefaultsKey),
+            let backend = TranscriptionBackend(rawValue: rawValue)
+        else {
+            return .voxtral
+        }
+        return backend
+    }
+
+    private func activateSelectedWhisperIfAvailable() -> Bool {
+        guard downloadedWhisperModels.contains(where: { $0.id == selectedWhisperModelID }) else {
+            return false
+        }
+
+        selectedBackend = .whisper
+        preloadWhisperIfNeeded()
+        return true
+    }
+
+    private func activateSelectedVoxtralIfAvailable() async -> Bool {
+        guard downloadedVoxtralModels.contains(where: { $0.id == selectedVoxtralModelID }) else {
+            return false
+        }
+
+        return await prepareAndMaybeSwitchToVoxtral()
     }
 
     private func startStatusPolling() {
@@ -553,7 +780,9 @@ private final class CursorTrackingPanelController {
         updatePosition()
 
         let timer = Timer(timeInterval: updateInterval, repeats: true) { [weak self] _ in
-            self?.updatePosition()
+            Task { @MainActor [weak self] in
+                self?.updatePosition()
+            }
         }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
@@ -613,14 +842,16 @@ final class RecordingPulseHUD {
         }
 
         let hideItem = DispatchWorkItem { [weak self] in
-            guard let self, let panel = self.panel else { return }
-            NSAnimationContext.runAnimationGroup({ context in
-                context.duration = 0.16
-                panel.animator().alphaValue = 0
-            }, completionHandler: {
-                self.cursorTracker?.stop()
-                panel.orderOut(nil)
-            })
+            Task { @MainActor [weak self] in
+                guard let self, let panel = self.panel else { return }
+                NSAnimationContext.runAnimationGroup({ context in
+                    context.duration = 0.16
+                    panel.animator().alphaValue = 0
+                }, completionHandler: {
+                    self.cursorTracker?.stop()
+                    panel.orderOut(nil)
+                })
+            }
         }
         hideWorkItem = hideItem
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.55, execute: hideItem)
@@ -703,10 +934,11 @@ private struct MenuBarContentView: View {
     let windowController: AppWindowController
 
     var body: some View {
-        Button(controller.isRecording ? "Stop Recording" : "Start Recording (Ctrl+Y)") {
+        Button(controller.recordingButtonTitle) {
             controller.toggleRecording()
         }
         .keyboardShortcut("y", modifiers: [.control])
+        .disabled(!controller.isRecording && !controller.canStartNewRecording)
 
         Divider()
 
@@ -775,7 +1007,9 @@ private struct MenuBarContentView: View {
 
             Divider()
 
-            if historyStore.items.isEmpty {
+            if historyStore.isLoadingInitialPage && historyStore.items.isEmpty {
+                Text("Loading recent transcriptions…")
+            } else if historyStore.items.isEmpty {
                 Text("No saved transcriptions yet")
             } else {
                 let recentItems = Array(historyStore.items.prefix(10))
@@ -788,9 +1022,9 @@ private struct MenuBarContentView: View {
                     }
                 }
 
-                if historyStore.items.count > recentItems.count {
+                if let footerText = historyStore.menuHistoryFooterText {
                     Divider()
-                    Text("\(historyStore.items.count - recentItems.count) more in History")
+                    Text(footerText)
                 }
             }
         }
@@ -808,7 +1042,7 @@ private struct MenuBarContentView: View {
             )
         }
 
-        Button("Quit LemonWhisper") {
+        Button("Quit Lemon") {
             NSApplication.shared.terminate(nil)
         }
     }
@@ -823,7 +1057,8 @@ struct LemonWhisperApp: App {
     private let windowController: AppWindowController
 
     init() {
-        let controller = LemonWhisperController()
+        let launchArguments = Set(CommandLine.arguments)
+        let controller = LemonWhisperController(launchArguments: launchArguments)
         let historyStore = TranscriptionHistoryStore.shared
         let navigationState = AppNavigationState()
         let windowController = AppWindowController.shared
@@ -835,7 +1070,6 @@ struct LemonWhisperApp: App {
 
         historyStore.ensureLoaded()
 
-        let launchArguments = Set(CommandLine.arguments)
         if launchArguments.contains("--codex-open-transcriptions") {
             DispatchQueue.main.async {
                 navigationState.show(.transcriptions)
@@ -856,6 +1090,29 @@ struct LemonWhisperApp: App {
             }
         } else if launchArguments.contains("--codex-open-main-window") {
             DispatchQueue.main.async {
+                navigationState.goHome()
+                windowController.show(
+                    controller: controller,
+                    historyStore: historyStore,
+                    navigationState: navigationState
+                )
+            }
+        } else if launchArguments.contains("--codex-preview-initial-setup") {
+            DispatchQueue.main.async {
+                navigationState.goHome()
+                windowController.show(
+                    controller: controller,
+                    historyStore: historyStore,
+                    navigationState: navigationState
+                )
+            }
+        } else {
+            Task { @MainActor in
+                let hasNoWhisperModels = WhisperModelCatalog.downloadedModels().isEmpty
+                let hasNoVoxtralModels = await VoxtralService.shared.downloadedModels().isEmpty
+                let shouldShowInitialSetup = hasNoWhisperModels && hasNoVoxtralModels
+                guard shouldShowInitialSetup else { return }
+
                 navigationState.goHome()
                 windowController.show(
                     controller: controller,
