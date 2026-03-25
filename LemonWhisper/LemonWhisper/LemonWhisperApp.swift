@@ -137,6 +137,7 @@ final class LemonWhisperController: ObservableObject {
         self.previewInitialSetup = launchArguments.contains("--codex-preview-initial-setup")
         logMicrophonePermissionState()
         requestAccessibilityPermission()
+        requestMicrophonePermissionIfNeeded()
         setupHotKeys()
         setupHotKeyObservers()
         startStatusPolling()
@@ -704,6 +705,28 @@ final class LemonWhisperController: ObservableObject {
         if !AXIsProcessTrusted() {
             let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as NSString: true] as CFDictionary
             _ = AXIsProcessTrustedWithOptions(options)
+        }
+    }
+    
+    private func requestMicrophonePermissionIfNeeded() {
+        let status = AVCaptureDevice.authorizationStatus(for: .audio)
+        switch status {
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .audio) { granted in
+                if granted {
+                    print("✅ Microphone permission granted (proactive)")
+                } else {
+                    print("❌ Microphone permission denied (proactive)")
+                }
+            }
+        case .authorized:
+            // Already authorized; nothing to do.
+            break
+        case .denied, .restricted:
+            // Already denied/restricted; we won't prompt again here.
+            break
+        @unknown default:
+            break
         }
     }
 
