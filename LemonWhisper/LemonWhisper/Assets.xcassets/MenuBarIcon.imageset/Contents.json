@@ -1,16 +1,14 @@
 {
   "images" : [
     {
-      "filename" : "MenuBarIcon.png",
+      "filename" : "LemonWhisper_16.png",
       "idiom" : "mac",
-      "scale" : "1x",
-      "size" : "18x18"
+      "scale" : "1x"
     },
     {
-      "filename" : "MenuBarIcon@2x.png",
+      "filename" : "LemonWhisper_32.png",
       "idiom" : "mac",
-      "scale" : "2x",
-      "size" : "18x18"
+      "scale" : "2x"
     }
   ],
   "info" : {
