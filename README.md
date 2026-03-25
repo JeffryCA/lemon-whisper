@@ -45,12 +45,8 @@ Select the `LemonWhisper` scheme and run it on `My Mac`.
 
 ### 4. Grant permissions on first launch
 
-LemonWhisper needs:
-
 - Microphone access to record audio
 - Accessibility access to paste text back into other apps
-
-If Accessibility is not enabled yet, the app will prompt for it.
 
 ## Local Storage
 
@@ -60,9 +56,7 @@ LemonWhisper stores app data under:
 ~/Library/Application Support/LemonWhisper/
 ```
 
-Important paths:
+Your data:
 
 - Models: `~/Library/Application Support/LemonWhisper/models/`
 - History database: `~/Library/Application Support/LemonWhisper/Transcriptions.sqlite`
-
-Nothing in the normal transcription flow requires a cloud service.
