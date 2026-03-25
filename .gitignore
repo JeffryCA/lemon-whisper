@@ -224,3 +224,6 @@ LemonWhisper/LemonWhisper/Resources/models/
 *.xcscheme
 *.xcworkspace
 xcuserdata/
+
+release.sh
+build-release/
