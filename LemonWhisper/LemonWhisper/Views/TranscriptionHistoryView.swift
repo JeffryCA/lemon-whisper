@@ -150,7 +150,7 @@ struct HistoryExportButton: View {
         Task {
             do {
                 let data = try await store.exportAllCSV()
-                try await saveCSV(data)
+                try saveCSV(data)
             } catch {
                 await MainActor.run {
                     exportErrorMessage = error.localizedDescription
@@ -181,3 +181,4 @@ struct HistoryExportButton: View {
         return "lemon-transcriptions-\(formatter.string(from: Date())).csv"
     }
 }
+

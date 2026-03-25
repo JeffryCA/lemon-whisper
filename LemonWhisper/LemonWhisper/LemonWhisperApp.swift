@@ -871,8 +871,10 @@ final class RecordingPulseHUD {
                     context.duration = 0.16
                     panel.animator().alphaValue = 0
                 }, completionHandler: {
-                    self.cursorTracker?.stop()
-                    panel.orderOut(nil)
+                    Task { @MainActor [weak self, weak panel] in
+                        self?.cursorTracker?.stop()
+                        panel?.orderOut(nil)
+                    }
                 })
             }
         }
