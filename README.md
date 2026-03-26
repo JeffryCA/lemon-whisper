@@ -18,35 +18,36 @@ It lets you record from anywhere, transcribe speech on-device with local models,
 ## Requirements
 
 - macOS 15.5 or newer
-- Apple Silicon is the intended development target
+- Apple Silicon is recommended
 
 ## Getting Started
 
-### 1. Clone the repo
+### 1. Download the latest release
+
+Download the latest `.dmg` from [GitHub Releases](https://github.com/JeffryCA/lemon-whisper/releases/latest).
+
+### 2. Install LemonWhisper
+
+- Open the DMG
+- Drag `LemonWhisper.app` into `Applications`
+- Launch LemonWhisper from `Applications`
+
+### 3. Grant permissions on first launch
+
+- Microphone access, so the app can record audio
+- Accessibility access, so the app can paste text back into other apps
+
+## Development
+
+If you want to work on the app locally:
 
 ```bash
 git clone https://github.com/JeffryCA/lemon-whisper.git
 cd lemon-whisper
+open LemonWhisper/LemonWhisper.xcodeproj
 ```
 
-### 2. Open the app in Xcode
-
-Open:
-
-```text
-LemonWhisper/LemonWhisper.xcodeproj
-```
-
-Xcode will resolve Swift Package Manager dependencies automatically.
-
-### 3. Run the app
-
-Select the `LemonWhisper` scheme and run it on `My Mac`.
-
-### 4. Grant permissions on first launch
-
-- Microphone access to record audio
-- Accessibility access to paste text back into other apps
+Xcode will resolve Swift Package Manager dependencies automatically. Then run the `LemonWhisper` scheme on `My Mac`.
 
 ## Local Storage
 
