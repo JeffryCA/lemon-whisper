@@ -85,7 +85,7 @@ struct LemonWhisperApp: App {
             )
         } label: {
             Image("MenuBarIcon")
-                .renderingMode(.original)
+                .renderingMode(.template)
         }
     }
 }
