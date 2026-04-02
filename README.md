@@ -1,6 +1,6 @@
 # LemonWhisper
 
-![LemonWhisper logo](LemonWhisper/LemonWhisper/AppIcon.icon/Assets/logo.png)
+![LemonWhisper social preview](docs/social-preview.png)
 
 LemonWhisper is a local-first macOS menu bar dictation app.
 
