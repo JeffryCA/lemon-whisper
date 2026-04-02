@@ -1,8 +1,10 @@
 import Carbon
 import Foundation
+import AppKit
 
 extension Notification.Name {
     static let toggleRecordingHotKey = Notification.Name("toggleRecordingHotKey")
+    static let cancelRecordingHotKey = Notification.Name("cancelRecordingHotKey")
 }
 
 private func hotKeyHandler(
@@ -18,6 +20,11 @@ private func hotKeyHandler(
 }
 
 enum HotKeyManager {
+    private static var globalFlagsMonitor: Any?
+    private static var localFlagsMonitor: Any?
+    private static var lastControlTapDate: Date?
+    private static let doubleTapThreshold: TimeInterval = 0.35
+
     static func registerToggleRecordingHotKey(into hotKeyRef: inout EventHotKeyRef?) {
         let keyCodeGermanY: UInt32 = UInt32(kVK_ANSI_Z)
         let modifiers: UInt32 = UInt32(controlKey)
@@ -53,5 +60,39 @@ enum HotKeyManager {
         } else {
             debugLog("❌ Failed to install hotkey handler (status: \(installStatus))")
         }
+
+        installCancelRecordingMonitorIfNeeded()
+    }
+
+    private static func installCancelRecordingMonitorIfNeeded() {
+        guard globalFlagsMonitor == nil, localFlagsMonitor == nil else { return }
+
+        globalFlagsMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { event in
+            handleFlagsChanged(event)
+        }
+
+        localFlagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
+            handleFlagsChanged(event)
+            return event
+        }
+    }
+
+    private static func handleFlagsChanged(_ event: NSEvent) {
+        guard event.keyCode == 59 || event.keyCode == 62 else { return }
+
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        guard flags == .control else { return }
+
+        let now = Date()
+        if let lastControlTapDate, now.timeIntervalSince(lastControlTapDate) <= doubleTapThreshold {
+            self.lastControlTapDate = nil
+            debugLog("⌨️ Double-control detected")
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .cancelRecordingHotKey, object: nil)
+            }
+            return
+        }
+
+        lastControlTapDate = now
     }
 }

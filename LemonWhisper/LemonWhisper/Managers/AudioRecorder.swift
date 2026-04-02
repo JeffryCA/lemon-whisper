@@ -62,6 +62,26 @@ class AudioRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
         }
     }
 
+    /// Stop recording and discard the temporary WAV file.
+    func cancelRecording() {
+        guard isRecording else {
+            print("⚠️ Tried to cancel but wasn’t recording")
+            return
+        }
+
+        let url = audioRecorder?.url
+        audioRecorder?.stop()
+        audioRecorder?.deleteRecording()
+        audioRecorder = nil
+        isRecording = false
+        latestWavURL = nil
+
+        if let url {
+            try? FileManager.default.removeItem(at: url)
+            print("🗑️ Recording cancelled:", url.lastPathComponent)
+        }
+    }
+
     // MARK: ‑‑ AVAudioRecorderDelegate
 
     func audioRecorderEncodeErrorDidOccur(_ recorder: AVAudioRecorder, error: Error?) {

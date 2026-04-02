@@ -8,6 +8,7 @@ It lets you record from anywhere, transcribe speech on-device with local models,
 
 - Runs as a menu bar app instead of a full dock app.
 - Start/Stop recording audio with `Ctrl+Y`.
+- Cancel an in-progress recording with a double-tap of `Control`.
 - Transcribes locally with either Whisper or Voxtral.
 - Downloads and manages models inside the app (Voxtral Mini 3B 4-bit recommended).
 - Switches between downloaded models without external scripts.

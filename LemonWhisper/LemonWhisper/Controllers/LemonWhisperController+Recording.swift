@@ -22,6 +22,15 @@ extension LemonWhisperController {
         startRecordingIfAuthorized()
     }
 
+    func cancelRecording() {
+        guard isRecording else { return }
+
+        debugLog("🗑️ Cancelling recording")
+        recorder.cancelRecording()
+        RecordingPulseHUD.shared.showPulse(isRecording: false)
+        isRecording = false
+    }
+
     var canStartNewRecording: Bool {
         if case .ready = setupState {
             return true

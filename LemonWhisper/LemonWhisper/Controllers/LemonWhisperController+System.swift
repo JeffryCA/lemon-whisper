@@ -27,5 +27,17 @@ extension LemonWhisperController {
                 self.toggleRecording()
             }
         }
+
+        NotificationCenter.default.addObserver(
+            forName: .cancelRecordingHotKey,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self, self.isRecording else { return }
+            debugLog("🔔 Cancel recording notification received on main queue")
+            Task { @MainActor in
+                self.cancelRecording()
+            }
+        }
     }
 }
