@@ -1,5 +1,7 @@
 # LemonWhisper
 
+![LemonWhisper logo](LemonWhisper/LemonWhisper/AppIcon.icon/Assets/logo.png)
+
 LemonWhisper is a local-first macOS menu bar dictation app.
 
 It lets you record from anywhere, transcribe speech on-device with local models, and send the result back into the app you were using before you started recording.
@@ -62,3 +64,10 @@ Your data:
 
 - Models: `~/Library/Application Support/LemonWhisper/models/`
 - History database: `~/Library/Application Support/LemonWhisper/Transcriptions.sqlite`
+
+## Credits
+
+LemonWhisper builds on open-source work from several projects and contributors:
+
+- [whisper.cpp](https://github.com/ggerganov/whisper.cpp) by Georgi Gerganov and contributors, which powers the local Whisper backend used by this app.
+- [mlx-voxtral-swift](https://github.com/VincentGourbin/mlx-voxtral-swift) by Vincent Gourbin and contributors, which powers the local Voxtral backend integration.
