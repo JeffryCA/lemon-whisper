@@ -256,14 +256,14 @@ extension LemonWhisperController {
 
     var setupCardProgress: Double? {
         switch setupState {
-        case .ready, .awaitingModelSelection, .preparingSelectedModel, .blocked:
+        case .bootstrapping, .ready, .awaitingModelSelection, .preparingSelectedModel, .blocked:
             return nil
         }
     }
 
     var setupCardShowsProgress: Bool {
         switch setupState {
-        case .ready, .awaitingModelSelection, .blocked:
+        case .bootstrapping, .ready, .awaitingModelSelection, .blocked:
             return false
         case .preparingSelectedModel:
             return true
@@ -276,6 +276,8 @@ extension LemonWhisperController {
 
     private var setupStatusLine: String? {
         switch setupState {
+        case .bootstrapping:
+            return nil
         case .ready:
             return nil
         case .awaitingModelSelection(let supportsVoxtral):

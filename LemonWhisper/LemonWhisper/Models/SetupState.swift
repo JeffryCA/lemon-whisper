@@ -1,19 +1,22 @@
 enum SetupState: Equatable {
+    case bootstrapping
     case ready
     case awaitingModelSelection(supportsVoxtral: Bool)
     case preparingSelectedModel
     case blocked(message: String)
 
     var isBlocking: Bool {
-        if case .ready = self {
+        switch self {
+        case .bootstrapping, .ready:
             return false
+        default:
+            return true
         }
-        return true
     }
 
     var cardTitle: String? {
         switch self {
-        case .ready:
+        case .bootstrapping, .ready:
             return nil
         case .awaitingModelSelection:
             return "Choose a model to get started"
@@ -26,7 +29,7 @@ enum SetupState: Equatable {
 
     var cardMessage: String? {
         switch self {
-        case .ready:
+        case .bootstrapping, .ready:
             return nil
         case .awaitingModelSelection(let supportsVoxtral):
             if supportsVoxtral {
@@ -42,6 +45,8 @@ enum SetupState: Equatable {
 
     var idleButtonTitle: String {
         switch self {
+        case .bootstrapping:
+            return "Loading…"
         case .ready:
             return "Start Recording (Ctrl+Y)"
         case .awaitingModelSelection:
