@@ -69,7 +69,11 @@ enum WhisperModelCatalog {
 
     static let defaultModelID = "large-v3-turbo"
 
-    static let vadModelURL = baseURL.appendingPathComponent("ggml-silero-v5.1.2.bin")
+    static let vadModelURLs: [URL] = [
+        URL(string: "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin")!,
+        URL(string: "https://huggingface.co/ggml-org/silero-v5.1.2/resolve/main/ggml-silero-v5.1.2.bin")!,
+        baseURL.appendingPathComponent("ggml-silero-v5.1.2.bin")
+    ]
     static let vadFileName = "ggml-silero-v5.1.2.bin"
 
     static var applicationSupportDirectory: URL {
@@ -153,7 +157,20 @@ enum WhisperModelCatalog {
         guard !FileManager.default.fileExists(atPath: vadLocalURL.path) else {
             return
         }
-        try await downloadFile(from: vadModelURL, to: vadLocalURL)
+
+        var lastError: Error?
+        for sourceURL in vadModelURLs {
+            do {
+                try await downloadFile(from: sourceURL, to: vadLocalURL)
+                return
+            } catch {
+                lastError = error
+            }
+        }
+
+        if let lastError {
+            throw lastError
+        }
     }
 
     static func downloadModel(

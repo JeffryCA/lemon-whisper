@@ -27,7 +27,8 @@ struct ManageModelsView: View {
             )
         }
 
-        return (whisper + voxtral).sorted(by: { $0.title < $1.title })
+        let allModels = controller.supportsVoxtral ? (whisper + voxtral) : whisper
+        return allModels.sorted(by: { $0.title < $1.title })
     }
 
     private var availableModels: [LocalModelItem] {
@@ -53,7 +54,8 @@ struct ManageModelsView: View {
             )
         }
 
-        let all = (whisper + voxtral).sorted(by: { $0.title < $1.title })
+        let all = (controller.supportsVoxtral ? (whisper + voxtral) : whisper)
+            .sorted(by: { $0.title < $1.title })
         return all.filter { !isDownloaded($0) }
     }
 
@@ -62,7 +64,7 @@ struct ManageModelsView: View {
             VStack(alignment: .leading, spacing: 18) {
                 ModelSectionCard(title: "Downloaded Models") {
                     if downloadedModels.isEmpty {
-                        EmptySectionText("No local models yet")
+                        EmptySectionText("No local models yet. Download one model below to use the app.")
                     } else {
                         ForEach(downloadedModels) { model in
                             DownloadedModelRow(model: model) {
@@ -84,7 +86,8 @@ struct ManageModelsView: View {
                             AvailableModelRow(
                                 model: model,
                                 progress: downloadProgress(for: model),
-                                isBusy: isBusy(model)
+                                isBusy: isBusy(model),
+                                showsInlineProgress: true
                             ) {
                                 download(model)
                             }
@@ -206,6 +209,7 @@ private struct AvailableModelRow: View {
     let model: LocalModelItem
     let progress: Double?
     let isBusy: Bool
+    let showsInlineProgress: Bool
     let onDownload: () -> Void
 
     var body: some View {
@@ -231,11 +235,11 @@ private struct AvailableModelRow: View {
                     .disabled(isBusy)
             }
 
-            if let progress, isBusy {
+            if showsInlineProgress, let progress, isBusy {
                 ProgressView(value: progress)
                     .progressViewStyle(.linear)
                     .lemonNeutralProgressTint()
-            } else if isBusy {
+            } else if showsInlineProgress, isBusy {
                 ProgressView()
                     .progressViewStyle(.linear)
                     .lemonNeutralProgressTint()

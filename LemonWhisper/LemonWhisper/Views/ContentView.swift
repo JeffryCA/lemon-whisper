@@ -66,7 +66,8 @@ struct ContentView: View {
             )
         }
 
-        return (whisper + voxtral).sorted(by: { $0.title < $1.title })
+        let allModels = controller.supportsVoxtral ? (whisper + voxtral) : whisper
+        return allModels.sorted(by: { $0.title < $1.title })
     }
 
     private var statusLine: String {
@@ -84,7 +85,6 @@ struct ContentView: View {
         }
         if let fallback = downloadedModels.first {
             selectedModelKey = fallback.id
-            applyModelSelection(key: fallback.id)
             return
         }
         selectedModelKey = ""
@@ -366,13 +366,15 @@ private struct SetupStatusCard: View {
     let onManageModels: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(title)
-                .font(.title3.weight(.semibold))
+        VStack(alignment: .leading, spacing: showsProgress ? 14 : 0) {
+            if showsProgress {
+                Text(title)
+                    .font(.title3.weight(.semibold))
 
-            Text(message)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+                Text(message)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             if showsProgress {
                 if let progress {
@@ -386,8 +388,10 @@ private struct SetupStatusCard: View {
                 }
             }
 
-            Button("Manage local models", action: onManageModels)
-                .buttonStyle(NeutralActionButtonStyle())
+            if !showsProgress {
+                Button("Download a model", action: onManageModels)
+                    .buttonStyle(NeutralActionButtonStyle())
+            }
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
