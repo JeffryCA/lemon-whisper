@@ -135,7 +135,6 @@ celerybeat.pid
 *.sage.py
 
 # Environments
-.env
 .envrc
 .venv
 env/
@@ -227,3 +226,5 @@ xcuserdata/
 
 release.sh
 build-release/
+config.bat
+node_modules

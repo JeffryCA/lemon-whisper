@@ -7,7 +7,7 @@ final class LemonWhisperController: ObservableObject {
     @Published var selectedLanguageCode = "en"
     @Published var selectedBackend: TranscriptionBackend = .whisper
     @Published var isPreparingVoxtral = false
-    @Published var setupState: SetupState = .awaitingModelSelection(supportsVoxtral: PlatformCapabilities.supportsVoxtral)
+    @Published var setupState: SetupState = .bootstrapping
     @Published var processMemoryMB: Int = 0
 
     @Published var selectedWhisperModelID: String = WhisperModelCatalog.selectedModelID()
