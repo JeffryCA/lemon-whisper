@@ -5,9 +5,9 @@ import Carbon
 final class LemonWhisperController: ObservableObject {
     @Published var isRecording = false
     @Published var selectedLanguageCode = "en"
-    @Published var selectedBackend: TranscriptionBackend = .voxtral
+    @Published var selectedBackend: TranscriptionBackend = .whisper
     @Published var isPreparingVoxtral = false
-    @Published var setupState: SetupState = .preparingSelectedModel
+    @Published var setupState: SetupState = .bootstrapping
     @Published var processMemoryMB: Int = 0
 
     @Published var selectedWhisperModelID: String = WhisperModelCatalog.selectedModelID()
@@ -61,10 +61,10 @@ final class LemonWhisperController: ObservableObject {
 
         Task { @MainActor in
             if previewInitialSetup {
-                selectedBackend = .voxtral
+                selectedBackend = supportsVoxtral ? .voxtral : .whisper
                 selectedVoxtralModelID = VoxtralService.defaultModelID
                 voxtralStatus = "Previewing first-run setup."
-                setupState = .firstRunDownloadingDefaultModel
+                setupState = .awaitingModelSelection(supportsVoxtral: supportsVoxtral)
                 return
             }
 

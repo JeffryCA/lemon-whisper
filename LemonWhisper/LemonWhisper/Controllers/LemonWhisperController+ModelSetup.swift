@@ -1,6 +1,10 @@
 import Foundation
 
 extension LemonWhisperController {
+    var supportsVoxtral: Bool {
+        PlatformCapabilities.supportsVoxtral
+    }
+
     var whisperCatalog: [WhisperModelOption] {
         WhisperModelCatalog.models
     }
@@ -21,6 +25,13 @@ extension LemonWhisperController {
             }
             ensureWhisperReady()
         case .voxtral:
+            guard supportsVoxtral else {
+                let message = "Voxtral is unavailable on this Mac. Choose a Whisper model instead."
+                voxtralStatus = message
+                setupState = .blocked(message: message)
+                selectedBackend = .whisper
+                return
+            }
             setupState = .preparingSelectedModel
             Task { @MainActor in
                 await ensureVoxtralReady()
@@ -34,6 +45,7 @@ extension LemonWhisperController {
     }
 
     func selectDownloadedVoxtralModelAndActivate(_ id: String) {
+        guard supportsVoxtral else { return }
         Task { @MainActor in
             await selectVoxtralModel(id)
             setBackend(.voxtral)
@@ -128,11 +140,10 @@ extension LemonWhisperController {
     }
 
     func downloadVoxtralModel(_ id: String) {
+        guard supportsVoxtral else { return }
         guard !voxtralOperationsInFlight.contains(id) else { return }
 
-        if id == selectedVoxtralModelID {
-            setupState = hasAnyDownloadedModels ? .preparingSelectedModel : .firstRunDownloadingDefaultModel
-        }
+        setupState = .preparingSelectedModel
 
         voxtralOperationsInFlight.insert(id)
         voxtralDownloadProgress[id] = nil
@@ -166,6 +177,7 @@ extension LemonWhisperController {
     }
 
     func removeVoxtralModel(_ id: String) {
+        guard supportsVoxtral else { return }
         guard !voxtralOperationsInFlight.contains(id) else { return }
         voxtralOperationsInFlight.insert(id)
 
@@ -226,6 +238,10 @@ extension LemonWhisperController {
         !downloadedWhisperModels.isEmpty || !downloadedVoxtralModels.isEmpty
     }
 
+    var hasAnySupportedDownloadedModels: Bool {
+        !downloadedWhisperModels.isEmpty || (supportsVoxtral && !downloadedVoxtralModels.isEmpty)
+    }
+
     var showsSetupCard: Bool {
         setupState.isBlocking
     }
@@ -240,21 +256,16 @@ extension LemonWhisperController {
 
     var setupCardProgress: Double? {
         switch setupState {
-        case .firstRunDownloadingDefaultModel:
-            if previewInitialSetup {
-                return 0.42
-            }
-            return voxtralDownloadProgress[selectedVoxtralModelID]
-        case .ready, .preparingSelectedModel, .blocked:
+        case .bootstrapping, .ready, .awaitingModelSelection, .preparingSelectedModel, .blocked:
             return nil
         }
     }
 
     var setupCardShowsProgress: Bool {
         switch setupState {
-        case .ready, .blocked:
+        case .bootstrapping, .ready, .awaitingModelSelection, .blocked:
             return false
-        case .firstRunDownloadingDefaultModel, .preparingSelectedModel:
+        case .preparingSelectedModel:
             return true
         }
     }
@@ -265,13 +276,15 @@ extension LemonWhisperController {
 
     private var setupStatusLine: String? {
         switch setupState {
+        case .bootstrapping:
+            return nil
         case .ready:
             return nil
-        case .firstRunDownloadingDefaultModel:
-            if let status = voxtralStatus, !status.isEmpty {
-                return status
+        case .awaitingModelSelection(let supportsVoxtral):
+            if supportsVoxtral {
+                return "Choose a local model to enable recording."
             }
-            return "Downloading Voxtral Mini 3B 4-bit..."
+            return "This Mac supports Whisper only. Choose a model to enable recording."
         case .preparingSelectedModel:
             if selectedBackend == .whisper,
                let status = whisperStatus,
@@ -296,27 +309,32 @@ extension LemonWhisperController {
         await refreshVoxtralDownloads()
         debugLog("🧭 Downloaded models. whisper=\(downloadedWhisperModels.map(\.id)) voxtral=\(downloadedVoxtralModels.map(\.id))")
 
-        if !hasAnyDownloadedModels {
-            selectedBackend = .voxtral
-            setupState = .firstRunDownloadingDefaultModel
-            voxtralStatus = "Downloading Voxtral Mini 3B 4-bit..."
-            debugLog("⬇️ No downloaded models found. Starting default Voxtral download")
-            downloadVoxtralModel(selectedVoxtralModelID)
+        if !supportsVoxtral {
+            selectedBackend = .whisper
+            await VoxtralService.shared.unload()
+        }
+
+        if !hasAnySupportedDownloadedModels {
+            selectedBackend = supportsVoxtral && storedBackendPreference() == .voxtral ? .voxtral : .whisper
+            setupState = .awaitingModelSelection(supportsVoxtral: supportsVoxtral)
+            whisperStatus = nil
+            voxtralStatus = nil
+            debugLog("ℹ️ No supported downloaded models found. Waiting for explicit model choice")
             return
         }
 
-        switch storedBackendPreference() {
+        switch effectiveStoredBackendPreference() {
         case .voxtral:
             if await activateSelectedVoxtralIfAvailable() {
                 return
             }
-            setupState = .blocked(message: "Download a Voxtral model to use Voxtral.")
         case .whisper:
             if activateSelectedWhisperIfAvailable() {
                 return
             }
-            setupState = .blocked(message: "Download a Whisper model to use Whisper.")
         }
+
+        setupState = .awaitingModelSelection(supportsVoxtral: supportsVoxtral)
     }
 
     private func refreshWhisperDownloads() {
@@ -376,15 +394,14 @@ extension LemonWhisperController {
         }
 
         guard downloadedVoxtralModels.contains(where: { $0.id == selectedVoxtralModelID }) else {
-            if hasAnyDownloadedModels {
+            if hasAnySupportedDownloadedModels {
                 let message = "Download a Voxtral model to use Voxtral."
                 voxtralStatus = message
                 setupState = .blocked(message: message)
                 debugLog("⛔️ Selected Voxtral model is not downloaded")
             } else {
-                voxtralStatus = "Downloading Voxtral Mini 3B 4-bit..."
-                setupState = .firstRunDownloadingDefaultModel
-                debugLog("⬇️ Voxtral not downloaded yet; waiting for default download")
+                setupState = .awaitingModelSelection(supportsVoxtral: supportsVoxtral)
+                debugLog("ℹ️ Voxtral not downloaded yet; waiting for explicit selection")
             }
             return false
         }
@@ -433,6 +450,14 @@ extension LemonWhisperController {
             return .voxtral
         }
         return backend
+    }
+
+    private func effectiveStoredBackendPreference() -> TranscriptionBackend {
+        let stored = storedBackendPreference()
+        if stored == .voxtral && !supportsVoxtral {
+            return .whisper
+        }
+        return stored
     }
 
     private func activateSelectedWhisperIfAvailable() -> Bool {

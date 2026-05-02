@@ -61,11 +61,13 @@ struct LemonWhisperApp: App {
         } else {
             Task { @MainActor in
                 let hasNoWhisperModels = WhisperModelCatalog.downloadedModels().isEmpty
-                let hasNoVoxtralModels = await VoxtralService.shared.downloadedModels().isEmpty
+                let hasNoVoxtralModels = PlatformCapabilities.supportsVoxtral
+                    ? await VoxtralService.shared.downloadedModels().isEmpty
+                    : true
                 let shouldShowInitialSetup = hasNoWhisperModels && hasNoVoxtralModels
                 guard shouldShowInitialSetup else { return }
 
-                navigationState.goHome()
+                navigationState.show(.manageModels)
                 windowController.show(
                     controller: controller,
                     historyStore: historyStore,

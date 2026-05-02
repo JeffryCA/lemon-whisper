@@ -103,8 +103,19 @@ extension LemonWhisperController {
 
     private func capturePasteTargetApp() {
         let frontmost = NSWorkspace.shared.frontmostApplication
-        targetBundleIdentifier = frontmost?.bundleIdentifier
-        targetProcessID = frontmost?.processIdentifier
+        let ownBundleIdentifier = Bundle.main.bundleIdentifier
+        let frontmostBundleIdentifier = frontmost?.bundleIdentifier
+        let frontmostProcessID = frontmost?.processIdentifier
+
+        if frontmostBundleIdentifier == ownBundleIdentifier || frontmostProcessID == getpid() {
+            targetBundleIdentifier = nil
+            targetProcessID = nil
+            print("🎯 Ignoring Lemon Whisper as paste target; will use the frontmost app later")
+            return
+        }
+
+        targetBundleIdentifier = frontmostBundleIdentifier
+        targetProcessID = frontmostProcessID
 
         if let appName = frontmost?.localizedName, let pid = targetProcessID {
             print("🎯 Paste target captured: \(appName) (pid: \(pid))")

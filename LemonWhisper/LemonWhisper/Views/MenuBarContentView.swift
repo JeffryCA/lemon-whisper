@@ -30,21 +30,23 @@ struct MenuBarContentView: View {
         }
 
         Menu("Model") {
-            Section("Downloaded Voxtral") {
-                if controller.downloadedVoxtralModels.isEmpty {
-                    Text("No Voxtral models downloaded")
-                } else {
-                    ForEach(controller.downloadedVoxtralModels) { option in
-                        Button {
-                            controller.selectDownloadedVoxtralModelAndActivate(option.id)
-                        } label: {
-                            if controller.selectedBackend == .voxtral && controller.selectedVoxtralModelID == option.id {
-                                Text("✓ \(option.title)")
-                            } else {
-                                Text(option.title)
+            if controller.supportsVoxtral {
+                Section("Downloaded Voxtral") {
+                    if controller.downloadedVoxtralModels.isEmpty {
+                        Text("No Voxtral models downloaded")
+                    } else {
+                        ForEach(controller.downloadedVoxtralModels) { option in
+                            Button {
+                                controller.selectDownloadedVoxtralModelAndActivate(option.id)
+                            } label: {
+                                if controller.selectedBackend == .voxtral && controller.selectedVoxtralModelID == option.id {
+                                    Text("✓ \(option.title)")
+                                } else {
+                                    Text(option.title)
+                                }
                             }
+                            .disabled(!controller.canSelectVoxtralNow)
                         }
-                        .disabled(!controller.canSelectVoxtralNow)
                     }
                 }
             }
