@@ -31,8 +31,11 @@ final class AppWindowController: NSObject, NSWindowDelegate {
 
             let window = NSWindow(contentViewController: hostingController)
             window.title = "Lemon Whisper"
-            window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+            window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
             window.toolbarStyle = .unified
+            window.titlebarAppearsTransparent = true
+            window.isOpaque = false
+            window.backgroundColor = .clear
             window.titleVisibility = .visible
             window.isReleasedWhenClosed = false
             window.minSize = NSSize(width: 460, height: 360)

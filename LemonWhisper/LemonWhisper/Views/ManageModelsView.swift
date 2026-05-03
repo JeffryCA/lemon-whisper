@@ -102,7 +102,7 @@ struct ManageModelsView: View {
             .padding(20)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(LemonChrome.windowBackground)
+        .lemonWindowBackground()
     }
 
     private func isDownloaded(_ model: LocalModelItem) -> Bool {
@@ -174,7 +174,7 @@ private struct ModelSectionCard<Content: View>: View {
             .padding(.horizontal, 16)
             .padding(.bottom, 12)
         }
-        .lemonSurface()
+        .lemonSurface(showsBorder: true, showsShadow: true)
     }
 }
 

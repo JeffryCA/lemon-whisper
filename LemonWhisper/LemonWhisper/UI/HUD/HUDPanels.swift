@@ -17,6 +17,17 @@ private func makeFloatingHUDPanel(size: CGSize) -> NSPanel {
     return panel
 }
 
+private func makeGlassHUDContainer(size: CGFloat) -> NSVisualEffectView {
+    let container = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: size, height: size))
+    container.material = .hudWindow
+    container.blendingMode = .behindWindow
+    container.state = .active
+    container.wantsLayer = true
+    container.layer?.cornerRadius = size / 2
+    container.layer?.masksToBounds = true
+    return container
+}
+
 @MainActor
 private final class CursorTrackingPanelController {
     private weak var panel: NSPanel?
@@ -74,22 +85,17 @@ final class RecordingPulseHUD {
     static let shared = RecordingPulseHUD()
 
     private var panel: NSPanel?
-    private var dotView: NSView?
     private var cursorTracker: CursorTrackingPanelController?
     private var hideWorkItem: DispatchWorkItem?
-    private let dotSize: CGFloat = 22
+    private let bubbleSize: CGFloat = 30
 
     private init() {}
 
     func showPulse(isRecording: Bool) {
         ensurePanel()
-        guard let panel, let dotView else { return }
+        guard let panel else { return }
 
         hideWorkItem?.cancel()
-        let pulseColor = isRecording
-            ? NSColor(calibratedWhite: 0.55, alpha: 0.95)
-            : NSColor(calibratedWhite: 0.72, alpha: 0.95)
-        dotView.layer?.backgroundColor = pulseColor.cgColor
 
         cursorTracker?.start()
 
@@ -121,15 +127,11 @@ final class RecordingPulseHUD {
     private func ensurePanel() {
         guard panel == nil else { return }
 
-        let panel = makeFloatingHUDPanel(size: CGSize(width: dotSize, height: dotSize))
-        let dotView = NSView(frame: NSRect(x: 0, y: 0, width: dotSize, height: dotSize))
-        dotView.wantsLayer = true
-        dotView.layer?.cornerRadius = dotSize / 2
-        dotView.layer?.backgroundColor = NSColor.systemGray.cgColor
-        panel.contentView = dotView
+        let panel = makeFloatingHUDPanel(size: CGSize(width: bubbleSize, height: bubbleSize))
+        let container = makeGlassHUDContainer(size: bubbleSize)
+        panel.contentView = container
 
         self.panel = panel
-        self.dotView = dotView
         self.cursorTracker = CursorTrackingPanelController(panel: panel)
     }
 }
@@ -141,7 +143,7 @@ final class TranscriptionLoadingHUD {
     private var panel: NSPanel?
     private var spinner: NSProgressIndicator?
     private var cursorTracker: CursorTrackingPanelController?
-    private let size: CGFloat = 24
+    private let size: CGFloat = 30
 
     private init() {}
 
@@ -165,14 +167,17 @@ final class TranscriptionLoadingHUD {
         guard panel == nil else { return }
 
         let panel = makeFloatingHUDPanel(size: CGSize(width: size, height: size))
-        let container = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: size, height: size))
-        container.material = .hudWindow
-        container.blendingMode = .withinWindow
-        container.state = .active
-        container.wantsLayer = true
-        container.layer?.cornerRadius = size / 2
+        let container = makeGlassHUDContainer(size: size)
 
-        let spinner = NSProgressIndicator(frame: NSRect(x: 5, y: 5, width: size - 10, height: size - 10))
+        let spinnerInset: CGFloat = 7
+        let spinner = NSProgressIndicator(
+            frame: NSRect(
+                x: spinnerInset,
+                y: spinnerInset,
+                width: size - (spinnerInset * 2),
+                height: size - (spinnerInset * 2)
+            )
+        )
         spinner.style = .spinning
         spinner.controlSize = .small
         spinner.isIndeterminate = true

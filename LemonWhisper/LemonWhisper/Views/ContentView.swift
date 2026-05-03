@@ -23,7 +23,7 @@ struct ContentView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
         }
-        .background(LemonChrome.windowBackground)
+        .lemonWindowBackground()
         .frame(
             minWidth: minimumContentWidth,
             idealWidth: idealContentWidth
@@ -220,7 +220,7 @@ struct ContentView: View {
             .padding(.bottom, 12)
         }
         .frame(maxWidth: .infinity, alignment: .top)
-        .background(LemonChrome.windowBackground)
+        .lemonWindowBackground()
     }
 
     private var transcriptionSummary: String {
@@ -309,6 +309,7 @@ private struct DetailContainer<Content: View, TrailingContent: View>: View {
             .padding(.horizontal, 20)
             .padding(.top, 14)
             .padding(.bottom, 14)
+            .background(.bar)
 
             Divider()
 
@@ -354,7 +355,7 @@ private struct HomeSettingsCard<Content: View>: View {
         VStack(spacing: 0) {
             content
         }
-        .lemonSurface()
+        .lemonSurface(showsBorder: true, showsShadow: true)
     }
 }
 
@@ -393,7 +394,7 @@ private struct SetupStatusCard: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .lemonSurface()
+        .lemonSurface(showsBorder: true, showsShadow: true)
     }
 }
 
