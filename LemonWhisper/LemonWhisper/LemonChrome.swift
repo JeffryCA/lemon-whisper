@@ -1,7 +1,6 @@
 import SwiftUI
 
 enum LemonChrome {
-    static let windowBackground = Color(nsColor: .windowBackgroundColor)
     static let surface = Color(nsColor: .controlBackgroundColor)
     static let border = Color(nsColor: .separatorColor)
     static let subtleBorder = border.opacity(0.35)
@@ -136,9 +135,35 @@ private struct LemonSurfaceModifier: ViewModifier {
     }
 }
 
+private struct LemonBarBackgroundModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content.background {
+            ZStack {
+                Rectangle()
+                    .fill(.thinMaterial)
+
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(0.05),
+                        LemonChrome.accentWash.opacity(0.65),
+                        LemonChrome.warmWash
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .allowsHitTesting(false)
+            }
+        }
+    }
+}
+
 extension View {
     func lemonWindowBackground() -> some View {
         modifier(LemonWindowBackgroundModifier())
+    }
+
+    func lemonBarBackground() -> some View {
+        modifier(LemonBarBackgroundModifier())
     }
 
     func lemonNeutralProgressTint() -> some View {

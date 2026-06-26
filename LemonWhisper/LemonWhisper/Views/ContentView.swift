@@ -309,7 +309,7 @@ private struct DetailContainer<Content: View, TrailingContent: View>: View {
             .padding(.horizontal, 20)
             .padding(.top, 14)
             .padding(.bottom, 14)
-            .background(.bar)
+            .lemonBarBackground()
 
             Divider()
 

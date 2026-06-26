@@ -101,6 +101,7 @@ struct ManageModelsView: View {
             }
             .padding(20)
         }
+        .scrollContentBackground(.hidden)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .lemonWindowBackground()
     }

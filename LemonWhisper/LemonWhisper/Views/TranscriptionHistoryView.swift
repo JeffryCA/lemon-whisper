@@ -6,44 +6,43 @@ struct TranscriptionHistoryView: View {
     @ObservedObject var store: TranscriptionHistoryStore
 
     var body: some View {
-        ZStack {
-            LemonChrome.windowBackground
-                .ignoresSafeArea()
-
-            Group {
-                if store.isLoadingInitialPage && store.items.isEmpty {
-                    ProgressView("Loading transcriptions…")
-                        .lemonNeutralProgressTint()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                } else if store.items.isEmpty {
-                    ContentUnavailableView(
-                        "No transcriptions yet",
-                        systemImage: "text.bubble",
-                        description: Text(store.lastError ?? "Saved transcriptions will appear here after you stop a recording.")
-                    )
-                } else {
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 14) {
-                            ForEach(store.items) { item in
-                                TranscriptionHistoryCard(
-                                    item: item,
-                                    onCopy: { store.copyToClipboard(item) },
-                                    onDelete: { store.delete(item) }
-                                )
-                                .task(id: item.id) {
-                                    await store.loadMoreIfNeeded(currentItem: item)
-                                }
+        Group {
+            if store.isLoadingInitialPage && store.items.isEmpty {
+                ProgressView("Loading transcriptions…")
+                    .lemonNeutralProgressTint()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            } else if store.items.isEmpty {
+                ContentUnavailableView(
+                    "No transcriptions yet",
+                    systemImage: "text.bubble",
+                    description: Text(store.lastError ?? "Saved transcriptions will appear here after you stop a recording.")
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 14) {
+                        ForEach(store.items) { item in
+                            TranscriptionHistoryCard(
+                                item: item,
+                                onCopy: { store.copyToClipboard(item) },
+                                onDelete: { store.delete(item) }
+                            )
+                            .task(id: item.id) {
+                                await store.loadMoreIfNeeded(currentItem: item)
                             }
-
-                            historyPaginationFooter
                         }
-                        .padding(.horizontal, 18)
-                        .padding(.top, 18)
-                        .padding(.bottom, 18)
+
+                        historyPaginationFooter
                     }
+                    .padding(.horizontal, 18)
+                    .padding(.top, 18)
+                    .padding(.bottom, 18)
                 }
+                .scrollContentBackground(.hidden)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .lemonWindowBackground()
         .task {
             store.ensureLoaded()
         }
@@ -101,7 +100,7 @@ private struct TranscriptionHistoryCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(16)
-        .lemonSurface(cornerRadius: 20, showsBorder: true, showsShadow: true)
+        .lemonSurface(showsBorder: true, showsShadow: true)
     }
 }
 
@@ -181,4 +180,3 @@ struct HistoryExportButton: View {
         return "lemon-transcriptions-\(formatter.string(from: Date())).csv"
     }
 }
-
