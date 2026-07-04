@@ -10,7 +10,7 @@ struct MenuBarContentView: View {
         Button(controller.recordingButtonTitle) {
             controller.toggleRecording()
         }
-        .keyboardShortcut("y", modifiers: [.control])
+        .keyboardShortcut(controller.recordingShortcut.keyEquivalent, modifiers: controller.recordingShortcut.swiftUIModifiers)
         .disabled(!controller.isRecording && !controller.canStartNewRecording)
 
         Divider()
@@ -24,6 +24,34 @@ struct MenuBarContentView: View {
                         Text("✓ \(option.title)")
                     } else {
                         Text(option.title)
+                    }
+                }
+            }
+        }
+
+        Menu("Microphone") {
+            Button {
+                controller.selectMicrophone(nil)
+            } label: {
+                if controller.selectedMicrophoneID == nil {
+                    Text("✓ System Default")
+                } else {
+                    Text("System Default")
+                }
+            }
+
+            if !controller.availableMicrophones.isEmpty {
+                Divider()
+
+                ForEach(controller.availableMicrophones) { device in
+                    Button {
+                        controller.selectMicrophone(device.id)
+                    } label: {
+                        if controller.selectedMicrophoneID == device.id {
+                            Text("✓ \(device.name)")
+                        } else {
+                            Text(device.name)
+                        }
                     }
                 }
             }

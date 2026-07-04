@@ -28,6 +28,8 @@ class AudioRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("recording.wav")
         print("🎙 Recording WAV to:", url)
 
+        MicrophoneManager.applySelectedInputDeviceIfNeeded(uniqueID: AppSettingsStore.selectedMicrophoneUniqueID)
+
         do {
             audioRecorder = try AVAudioRecorder(url: url, settings: settings)
             audioRecorder?.delegate = self
@@ -52,6 +54,7 @@ class AudioRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
         }
         audioRecorder?.stop()
         isRecording = false
+        MicrophoneManager.restorePreviousInputDeviceIfNeeded()
         print("🛑 Recording stopped")
 
         if let url = audioRecorder?.url,
@@ -75,6 +78,7 @@ class AudioRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
         audioRecorder = nil
         isRecording = false
         latestWavURL = nil
+        MicrophoneManager.restorePreviousInputDeviceIfNeeded()
 
         if let url {
             try? FileManager.default.removeItem(at: url)
