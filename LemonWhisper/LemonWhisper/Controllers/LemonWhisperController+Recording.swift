@@ -74,11 +74,14 @@ extension LemonWhisperController {
         switch status {
         case .authorized:
             capturePasteTargetApp()
+            // Show the indicator before the recorder's device setup (which can take a few ms,
+            // e.g. switching input device) so the hotkey feels instant. Hide it if start fails.
+            RecordingPulseHUD.shared.showPulse(isRecording: true)
             guard recorder.startRecording() else {
+                RecordingPulseHUD.shared.showPulse(isRecording: false)
                 debugLog("❌ Recording failed to start")
                 return
             }
-            RecordingPulseHUD.shared.showPulse(isRecording: true)
             isRecording = true
             onRecordingDidStart()
             debugLog("✅ Recording started")
