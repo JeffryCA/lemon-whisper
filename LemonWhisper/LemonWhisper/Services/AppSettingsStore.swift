@@ -2,7 +2,7 @@ import Foundation
 
 /// Persists user-configurable settings (microphone, recording shortcut) across launches.
 enum AppSettingsStore {
-    private static let defaults = UserDefaults.standard
+    static var defaults = UserDefaults.standard
     private static let recordingShortcutKey = "recordingShortcut"
     private static let selectedMicrophoneUniqueIDKey = "selectedMicrophoneUniqueID"
 

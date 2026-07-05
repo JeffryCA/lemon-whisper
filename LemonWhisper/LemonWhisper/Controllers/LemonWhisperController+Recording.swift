@@ -52,7 +52,10 @@ extension LemonWhisperController {
         switch status {
         case .authorized:
             capturePasteTargetApp()
-            recorder.startRecording()
+            guard recorder.startRecording() else {
+                debugLog("❌ Recording failed to start")
+                return
+            }
             RecordingPulseHUD.shared.showPulse(isRecording: true)
             isRecording = true
             debugLog("✅ Recording started")
@@ -63,7 +66,10 @@ extension LemonWhisperController {
                     if granted {
                         debugLog("✅ Microphone permission granted")
                         self.capturePasteTargetApp()
-                        self.recorder.startRecording()
+                        guard self.recorder.startRecording() else {
+                            debugLog("❌ Recording failed to start after microphone permission prompt")
+                            return
+                        }
                         RecordingPulseHUD.shared.showPulse(isRecording: true)
                         self.isRecording = true
                         debugLog("✅ Recording started after microphone permission prompt")

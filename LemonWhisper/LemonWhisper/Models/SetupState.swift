@@ -48,7 +48,7 @@ enum SetupState: Equatable {
         case .bootstrapping:
             return "Loading…"
         case .ready:
-            return "Start Recording (Ctrl+Y)"
+            return "Start Recording"
         case .awaitingModelSelection:
             return "Choose Model to Start"
         case .preparingSelectedModel:

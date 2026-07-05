@@ -12,8 +12,9 @@ class AudioRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
     private var isRecording = false
 
     /// Begin recording into `<tmp>/recording.wav`.
-    func startRecording() {
-        guard !isRecording else { return }
+    @discardableResult
+    func startRecording() -> Bool {
+        guard !isRecording else { return false }
 
         // 16‑kHz, 16‑bit, mono, little‑endian PCM
         let settings: [String: Any] = [
@@ -37,12 +38,18 @@ class AudioRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
 
             guard audioRecorder?.record() == true else {
                 print("❌ record() returned false")
-                return
+                MicrophoneManager.restorePreviousInputDeviceIfNeeded()
+                audioRecorder = nil
+                return false
             }
             isRecording = true
             print("✅ Recording started")
+            return true
         } catch {
             print("❌ Failed to start recording:", error)
+            MicrophoneManager.restorePreviousInputDeviceIfNeeded()
+            audioRecorder = nil
+            return false
         }
     }
 
