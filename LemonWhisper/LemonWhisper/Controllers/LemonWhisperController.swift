@@ -20,6 +20,10 @@ final class LemonWhisperController: ObservableObject {
     @Published var whisperDownloadProgress: [String: Double] = [:]
     @Published var voxtralDownloadProgress: [String: Double] = [:]
 
+    @Published var selectedMicrophoneID: String? = AppSettingsStore.selectedMicrophoneUniqueID
+    @Published var availableMicrophones: [MicrophoneDevice] = MicrophoneManager.availableDevices()
+    @Published var recordingShortcut: RecordingShortcut = AppSettingsStore.recordingShortcut
+
     var whisperOperationsInFlight: Set<String> = []
     var voxtralOperationsInFlight: Set<String> = []
 

@@ -32,6 +32,7 @@ struct ContentView: View {
         .task {
             await loadModels()
             syncSelectedModelKey()
+            controller.refreshAvailableMicrophones()
         }
         .onChange(of: controller.selectedBackend) { _, _ in syncSelectedModelKey() }
         .onChange(of: controller.selectedWhisperModelID) { _, _ in syncSelectedModelKey() }
@@ -99,6 +100,20 @@ struct ContentView: View {
             let key = "\(ModelEngine.voxtral.rawValue):\(controller.selectedVoxtralModelID)"
             return downloadedModels.contains(where: { $0.id == key }) ? key : nil
         }
+    }
+
+    private var microphoneSelectionBinding: Binding<String?> {
+        Binding(
+            get: { controller.selectedMicrophoneID },
+            set: { controller.selectMicrophone($0) }
+        )
+    }
+
+    private var shortcutBinding: Binding<RecordingShortcut> {
+        Binding(
+            get: { controller.recordingShortcut },
+            set: { controller.updateRecordingShortcut($0) }
+        )
     }
 
     private func applyModelSelection(key: String) {
@@ -185,6 +200,25 @@ struct ContentView: View {
                         guard !newValue.isEmpty else { return }
                         applyModelSelection(key: newValue)
                     }
+                }
+
+                Divider()
+
+                HomeValueRow(title: "Microphone") {
+                    Picker("", selection: microphoneSelectionBinding) {
+                        Text("System Default").tag(Optional<String>.none)
+                        ForEach(controller.availableMicrophones) { device in
+                            Text(device.name).tag(Optional(device.id))
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 220, alignment: .trailing)
+                }
+
+                Divider()
+
+                HomeValueRow(title: "Shortcut") {
+                    ShortcutRecorderControl(shortcut: shortcutBinding)
                 }
 
                 Divider()

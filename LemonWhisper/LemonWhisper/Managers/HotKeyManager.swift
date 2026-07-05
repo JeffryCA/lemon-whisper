@@ -24,15 +24,16 @@ enum HotKeyManager {
     private static var localFlagsMonitor: Any?
     private static var lastControlTapDate: Date?
     private static let doubleTapThreshold: TimeInterval = 0.35
+    private static var handlerInstalled = false
 
-    static func registerToggleRecordingHotKey(into hotKeyRef: inout EventHotKeyRef?) {
-        let keyCodeGermanY: UInt32 = UInt32(kVK_ANSI_Z)
-        let modifiers: UInt32 = UInt32(controlKey)
+    static func registerToggleRecordingHotKey(into hotKeyRef: inout EventHotKeyRef?, keyCode: UInt32, modifiers: UInt32) {
+        installEventHandlerOnce()
+
         let toggleHotKeyID = EventHotKeyID(signature: OSType(32), id: 1)
-        debugLog("⌨️ Registering global hotkey Ctrl+Y with keyCode=\(keyCodeGermanY)")
+        debugLog("⌨️ Registering global hotkey with keyCode=\(keyCode) modifiers=\(modifiers)")
 
         let registerStatus = RegisterEventHotKey(
-            keyCodeGermanY,
+            keyCode,
             modifiers,
             toggleHotKeyID,
             GetEventDispatcherTarget(),
@@ -41,10 +42,26 @@ enum HotKeyManager {
         )
 
         if registerStatus == noErr {
-            debugLog("✅ Registered global hotkey Ctrl+Y (keyCode: \(keyCodeGermanY))")
+            debugLog("✅ Registered global hotkey (keyCode: \(keyCode), modifiers: \(modifiers))")
         } else {
-            debugLog("❌ Failed to register global hotkey Ctrl+Y (status: \(registerStatus))")
+            debugLog("❌ Failed to register global hotkey (status: \(registerStatus))")
         }
+
+        installCancelRecordingMonitorIfNeeded()
+    }
+
+    /// Swaps the currently registered hotkey for a new keyCode/modifiers combination.
+    static func updateToggleRecordingHotKey(into hotKeyRef: inout EventHotKeyRef?, keyCode: UInt32, modifiers: UInt32) {
+        if let existingRef = hotKeyRef {
+            UnregisterEventHotKey(existingRef)
+            hotKeyRef = nil
+        }
+        registerToggleRecordingHotKey(into: &hotKeyRef, keyCode: keyCode, modifiers: modifiers)
+    }
+
+    private static func installEventHandlerOnce() {
+        guard !handlerInstalled else { return }
+        handlerInstalled = true
 
         let installStatus = InstallEventHandler(
             GetEventDispatcherTarget(),
@@ -60,8 +77,6 @@ enum HotKeyManager {
         } else {
             debugLog("❌ Failed to install hotkey handler (status: \(installStatus))")
         }
-
-        installCancelRecordingMonitorIfNeeded()
     }
 
     private static func installCancelRecordingMonitorIfNeeded() {

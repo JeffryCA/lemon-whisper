@@ -12,7 +12,11 @@ extension LemonWhisperController {
     }
 
     func setupHotKeys() {
-        HotKeyManager.registerToggleRecordingHotKey(into: &toggleHotKeyRef)
+        HotKeyManager.registerToggleRecordingHotKey(
+            into: &toggleHotKeyRef,
+            keyCode: recordingShortcut.keyCode,
+            modifiers: recordingShortcut.carbonModifiers
+        )
     }
 
     func setupHotKeyObservers() {
