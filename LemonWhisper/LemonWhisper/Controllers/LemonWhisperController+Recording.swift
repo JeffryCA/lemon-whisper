@@ -49,6 +49,9 @@ extension LemonWhisperController {
         RecordingPulseHUD.shared.showPulse(isRecording: false)
         isRecording = false
         recordingStartedAt = nil
+        // No transcription will fire to re-arm it, so restart the idle countdown here —
+        // otherwise a model loaded by this recording's parallel warmup never unloads.
+        scheduleIdleUnloadIfNeeded()
     }
 
     var canStartNewRecording: Bool {

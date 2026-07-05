@@ -33,7 +33,7 @@ extension LemonWhisperController {
     /// is forwarded to the backend to decide whether to eagerly materialize weights now.
     func warmUpCurrentBackendInBackground(weightMaterializationBudget: TimeInterval?) {
         let controller = memoryController
-        Task.detached { [weak self] in
+        Task.detached {
             if await controller.isLoaded() { return }
             do {
                 try await controller.warmUp(weightMaterializationBudget: weightMaterializationBudget)
@@ -42,7 +42,6 @@ extension LemonWhisperController {
                     debugLog("⚠️ Background warmup failed: \(error.localizedDescription)")
                 }
             }
-            await MainActor.run { self?.refreshRuntimeStatusSoon() }
         }
     }
 
@@ -79,9 +78,8 @@ extension LemonWhisperController {
         let controller = memoryController
         let backend = selectedBackend
         debugLog("💤 Idle timeout reached — unloading \(backend.rawValue) model")
-        Task.detached { [weak self] in
+        Task.detached {
             await controller.unload()
-            await MainActor.run { self?.refreshRuntimeStatusSoon() }
         }
     }
 }

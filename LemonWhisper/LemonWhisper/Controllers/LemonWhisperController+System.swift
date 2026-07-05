@@ -11,17 +11,6 @@ extension LemonWhisperController {
         processMemoryMB = currentProcessMemoryMB()
     }
 
-    /// Refreshes the memory readout now and once more shortly after, so mode changes and
-    /// idle unloads are reflected immediately instead of waiting for the next poll tick.
-    /// The follow-up catches memory that the allocator releases a beat after `unload()` returns.
-    func refreshRuntimeStatusSoon() {
-        refreshRuntimeStatus()
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 750_000_000)
-            refreshRuntimeStatus()
-        }
-    }
-
     func setupHotKeys() {
         HotKeyManager.registerToggleRecordingHotKey(
             into: &toggleHotKeyRef,

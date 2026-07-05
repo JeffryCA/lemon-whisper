@@ -20,9 +20,8 @@ extension LemonWhisperController {
         case .whisper:
             selectedBackend = .whisper
             UserDefaults.standard.set(TranscriptionBackend.whisper.rawValue, forKey: selectedBackendDefaultsKey)
-            Task { @MainActor in
+            Task {
                 await VoxtralService.shared.unload()
-                refreshRuntimeStatusSoon()
             }
             ensureWhisperReady()
         case .voxtral:
@@ -385,7 +384,6 @@ extension LemonWhisperController {
                 }
                 whisperStatus = "Whisper ready: \(selected.title)"
                 setupState = .ready
-                refreshRuntimeStatusSoon()
                 debugLog("✅ Whisper ready: \(selected.id)")
             } catch {
                 let message = "Failed to load Whisper: \(error.localizedDescription)"
@@ -445,7 +443,6 @@ extension LemonWhisperController {
             selectedBackend = .voxtral
             UserDefaults.standard.set(TranscriptionBackend.voxtral.rawValue, forKey: selectedBackendDefaultsKey)
             setupState = .ready
-            refreshRuntimeStatusSoon()
             debugLog("✅ Voxtral ready. Switched backend")
             return true
         } catch {
