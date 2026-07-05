@@ -55,7 +55,9 @@ extension LemonWhisperController {
     }
 
     var canStartNewRecording: Bool {
-        !setupState.blocksRecording
+        // Optimistic once a model is on disk (it may still be loading), but never while there is
+        // no usable model — downloading, bootstrapping, or a failed/blocked setup.
+        hasUsableSelectedModel && !setupState.blocksRecording
     }
 
     var recordingButtonTitle: String {

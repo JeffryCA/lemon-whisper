@@ -242,6 +242,18 @@ extension LemonWhisperController {
         !downloadedWhisperModels.isEmpty || (supportsVoxtral && !downloadedVoxtralModels.isEmpty)
     }
 
+    /// Whether the selected backend's model is downloaded and on disk. Recording requires this,
+    /// so we never start capturing while a model is still downloading or during bootstrapping —
+    /// only while an already-downloaded model is loading into memory.
+    var hasUsableSelectedModel: Bool {
+        switch selectedBackend {
+        case .whisper:
+            return isWhisperModelDownloaded(selectedWhisperModelID)
+        case .voxtral:
+            return isVoxtralModelDownloaded(selectedVoxtralModelID)
+        }
+    }
+
     var showsSetupCard: Bool {
         setupState.isBlocking
     }
