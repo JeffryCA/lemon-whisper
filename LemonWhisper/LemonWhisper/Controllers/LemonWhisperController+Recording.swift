@@ -6,10 +6,11 @@ extension LemonWhisperController {
         debugLog("🎙️ toggleRecording invoked. isRecording=\(isRecording) canStartNewRecording=\(canStartNewRecording)")
 
         if isRecording {
+            let stoppedAt = Date()
             debugLog("🛑 Stopping recording")
             recorder.stopRecording()
             RecordingPulseHUD.shared.showPulse(isRecording: false)
-            transcribeLatestRecording()
+            transcribeLatestRecording(recordingStoppedAt: stoppedAt)
             isRecording = false
             return
         }
@@ -19,7 +20,25 @@ extension LemonWhisperController {
             return
         }
 
+        recordingStartedAt = Date()
         startRecordingIfAuthorized()
+    }
+
+    /// Fallback recording length used to budget eager materialization before we've measured a
+    /// real recording (e.g. the first lazy-mode recording after launch).
+    static let assumedTypicalRecordingDuration: TimeInterval = 3
+
+    /// Called the moment recording begins. Keeps the model out of an idle unload and, in lazy
+    /// mode, starts loading it in parallel so it is ready by the time recording stops.
+    private func onRecordingDidStart() {
+        cancelIdleUnloadTimer()
+        if modelLoadingMode == .lazy {
+            // Load the pipeline in parallel with recording. The backend materializes weights now
+            // only if a prior measurement shows that pass fits within a typical recording;
+            // otherwise it defers to the transcription so it can never block it.
+            let budget = lastRecordingDuration ?? Self.assumedTypicalRecordingDuration
+            warmUpCurrentBackendInBackground(weightMaterializationBudget: budget)
+        }
     }
 
     func cancelRecording() {
@@ -29,13 +48,11 @@ extension LemonWhisperController {
         recorder.cancelRecording()
         RecordingPulseHUD.shared.showPulse(isRecording: false)
         isRecording = false
+        recordingStartedAt = nil
     }
 
     var canStartNewRecording: Bool {
-        if case .ready = setupState {
-            return true
-        }
-        return false
+        !setupState.blocksRecording
     }
 
     var recordingButtonTitle: String {
@@ -58,6 +75,7 @@ extension LemonWhisperController {
             }
             RecordingPulseHUD.shared.showPulse(isRecording: true)
             isRecording = true
+            onRecordingDidStart()
             debugLog("✅ Recording started")
         case .notDetermined:
             permissionManager.requestMicrophoneAccess { [weak self] granted in
@@ -72,6 +90,7 @@ extension LemonWhisperController {
                         }
                         RecordingPulseHUD.shared.showPulse(isRecording: true)
                         self.isRecording = true
+                        self.onRecordingDidStart()
                         debugLog("✅ Recording started after microphone permission prompt")
                     } else {
                         debugLog("❌ Microphone permission denied")
@@ -85,10 +104,17 @@ extension LemonWhisperController {
         }
     }
 
-    private func transcribeLatestRecording() {
+    private func transcribeLatestRecording(recordingStoppedAt: Date) {
         guard let wavURL = recorder.latestWavURL else {
             debugLog("⚠️ No latest recording URL available for transcription")
             return
+        }
+
+        let startedAt = recordingStartedAt
+        recordingStartedAt = nil
+
+        if let startedAt {
+            lastRecordingDuration = recordingStoppedAt.timeIntervalSince(startedAt)
         }
 
         debugLog("📝 Starting transcription. backend=\(selectedBackend.rawValue) file=\(wavURL.lastPathComponent)")
@@ -97,12 +123,16 @@ extension LemonWhisperController {
             language: selectedLanguageCode,
             backend: selectedBackend,
             targetBundleIdentifier: targetBundleIdentifier,
-            targetProcessID: targetProcessID
-        ) { isActive in
+            targetProcessID: targetProcessID,
+            recordingStartedAt: startedAt,
+            recordingStoppedAt: recordingStoppedAt
+        ) { [weak self] isActive in
             if isActive {
                 TranscriptionLoadingHUD.shared.show()
+                self?.cancelIdleUnloadTimer()
             } else {
                 TranscriptionLoadingHUD.shared.hide()
+                self?.scheduleIdleUnloadIfNeeded()
             }
         }
     }

@@ -49,6 +49,26 @@ struct AppSettingsStoreTests {
         }
     }
 
+    @Test func modelLoadingModeDefaultsToFastAndRoundTrips() {
+        withTemporaryDefaults {
+            #expect(AppSettingsStore.modelLoadingMode == .fast)
+
+            AppSettingsStore.modelLoadingMode = .lazy
+            #expect(AppSettingsStore.modelLoadingMode == .lazy)
+        }
+    }
+
+    @Test func modelIdleTimeoutDefaultsToOneMinuteAndRoundTrips() {
+        withTemporaryDefaults {
+            #expect(AppSettingsStore.modelIdleTimeout == .oneMinute)
+            #expect(AppSettingsStore.modelIdleTimeout.seconds == 60)
+
+            AppSettingsStore.modelIdleTimeout = .fiveMinutes
+            #expect(AppSettingsStore.modelIdleTimeout == .fiveMinutes)
+            #expect(AppSettingsStore.modelIdleTimeout.seconds == 300)
+        }
+    }
+
     private func withTemporaryDefaults(_ body: () -> Void) {
         let suiteName = "LemonWhisperTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!

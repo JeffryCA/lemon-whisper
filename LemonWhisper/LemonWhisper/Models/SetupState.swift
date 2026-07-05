@@ -14,6 +14,17 @@ enum SetupState: Equatable {
         }
     }
 
+    /// Recording is refused only when no usable model exists on disk. If a model is
+    /// available we start optimistically, even while it is still loading into memory.
+    var blocksRecording: Bool {
+        switch self {
+        case .awaitingModelSelection, .blocked:
+            return true
+        case .bootstrapping, .ready, .preparingSelectedModel:
+            return false
+        }
+    }
+
     var cardTitle: String? {
         switch self {
         case .bootstrapping, .ready:

@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 
 #if canImport(VoxtralCore)
@@ -44,6 +45,11 @@ actor VoxtralService {
     private var loadedModelID: String?
     private var isLoadingModel = false
     private var lastErrorMessage: String?
+    private var didMaterializeWeights = false
+    /// Measured wall-clock cost of one weight-materialization pass. Kept across unloads because
+    /// it is a property of the model, not of any single load. Used to decide whether eager
+    /// materialization can finish within a caller-supplied time budget.
+    private var lastMaterializationDuration: TimeInterval?
 
     private var selectedModelID: String
 
@@ -187,9 +193,18 @@ actor VoxtralService {
 #endif
     }
 
-    func warmupModel() async throws {
+    /// Loads the pipeline. With a non-nil `weightMaterializationBudget`, also runs a one-time
+    /// throwaway inference so weights are resident immediately — but only if a prior measurement
+    /// shows that pass fits within the budget (pass `.infinity` to always do it, as in fast mode).
+    /// A `nil` budget loads the graph only and leaves materialization to the first transcription.
+    func warmupModel(weightMaterializationBudget: TimeInterval? = nil) async throws {
 #if canImport(VoxtralCore)
-        _ = try await loadPipelineIfNeeded()
+        let pipeline = try await loadPipelineIfNeeded()
+        guard let budget = weightMaterializationBudget else { return }
+        // If we've already measured materialization as slower than the budget (e.g. longer than a
+        // typical recording), skip it here so it can't block the real transcription.
+        if let measured = lastMaterializationDuration, measured >= budget { return }
+        await materializeWeightsIfNeeded(pipeline)
 #else
         throw VoxtralServiceError.unavailable
 #endif
@@ -201,6 +216,7 @@ actor VoxtralService {
         pipeline = nil
         loadedModelID = nil
         lastErrorMessage = nil
+        didMaterializeWeights = false
 #endif
     }
 
@@ -247,6 +263,45 @@ actor VoxtralService {
         default:
             return nil
         }
+    }
+
+    /// MLX evaluates lazily: `loadModel` builds the graph, but the weight arrays are not
+    /// materialized in memory until the first forward pass. That is why memory only spikes on
+    /// the first real transcription. Run one throwaway inference on silence so that cost (and
+    /// the associated latency) is paid at warmup instead. Best-effort — never fails warmup.
+    private func materializeWeightsIfNeeded(_ pipeline: VoxtralPipeline) async {
+        guard !didMaterializeWeights else { return }
+        guard let silenceURL = try? Self.makeSilentClip() else { return }
+        defer { try? FileManager.default.removeItem(at: silenceURL) }
+        let start = Date()
+        _ = try? await pipeline.transcribe(audio: silenceURL, language: "en")
+        let elapsed = Date().timeIntervalSince(start)
+        lastMaterializationDuration = elapsed
+        didMaterializeWeights = true
+        print("🧠 Voxtral weights materialized in \(Int(elapsed * 1000)) ms")
+    }
+
+    private static func makeSilentClip() throws -> URL {
+        let sampleRate = 16_000.0
+        let frames = AVAudioFrameCount(sampleRate * 0.3)
+        guard
+            let format = AVAudioFormat(
+                commonFormat: .pcmFormatFloat32,
+                sampleRate: sampleRate,
+                channels: 1,
+                interleaved: false
+            ),
+            let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames)
+        else {
+            throw VoxtralServiceError.loadFailed("Could not allocate warmup buffer")
+        }
+
+        buffer.frameLength = frames // Freshly allocated buffers are zero-filled == silence.
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("voxtral-warmup-\(UUID().uuidString).wav")
+        let file = try AVAudioFile(forWriting: url, settings: format.settings)
+        try file.write(from: buffer)
+        return url
     }
 
     private func removeIncompleteModelIfPresent(_ info: VoxtralModelInfo) {

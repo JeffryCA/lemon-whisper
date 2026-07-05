@@ -20,8 +20,9 @@ extension LemonWhisperController {
         case .whisper:
             selectedBackend = .whisper
             UserDefaults.standard.set(TranscriptionBackend.whisper.rawValue, forKey: selectedBackendDefaultsKey)
-            Task {
+            Task { @MainActor in
                 await VoxtralService.shared.unload()
+                refreshRuntimeStatusSoon()
             }
             ensureWhisperReady()
         case .voxtral:
@@ -357,18 +358,26 @@ extension LemonWhisperController {
     }
 
     private func ensureWhisperReady() {
+        guard let selected = WhisperModelCatalog.selectedModelIfDownloaded() else {
+            let message = "Download a Whisper model to use Whisper."
+            whisperStatus = message
+            setupState = .blocked(message: message)
+            return
+        }
+
+        if modelLoadingMode == .lazy {
+            // Optimistic: the model exists on disk. It loads on demand (or in parallel with recording).
+            whisperStatus = "Whisper ready: \(selected.title)"
+            setupState = .ready
+            debugLog("🐢 Whisper ready (lazy): \(selected.id)")
+            return
+        }
+
         setupState = .preparingSelectedModel
         debugLog("🧠 Preparing Whisper model")
 
         Task { @MainActor in
             do {
-                guard let selected = WhisperModelCatalog.selectedModelIfDownloaded() else {
-                    let message = "Download a Whisper model to use Whisper."
-                    whisperStatus = message
-                    setupState = .blocked(message: message)
-                    return
-                }
-
                 _ = try await WhisperContext.createContext(path: selected.localURL.path)
                 try await WhisperModelCatalog.ensureVADDownloadedIfNeeded()
                 if let context = WhisperContext.getShared() {
@@ -376,6 +385,7 @@ extension LemonWhisperController {
                 }
                 whisperStatus = "Whisper ready: \(selected.title)"
                 setupState = .ready
+                refreshRuntimeStatusSoon()
                 debugLog("✅ Whisper ready: \(selected.id)")
             } catch {
                 let message = "Failed to load Whisper: \(error.localizedDescription)"
@@ -406,7 +416,18 @@ extension LemonWhisperController {
             return false
         }
 
-        if await VoxtralService.shared.isReady {
+        let voxtralAlreadyReady = await VoxtralService.shared.isReady
+
+        if modelLoadingMode == .lazy && !voxtralAlreadyReady {
+            // Optimistic: the model exists on disk. It loads on demand (or in parallel with recording).
+            selectedBackend = .voxtral
+            UserDefaults.standard.set(TranscriptionBackend.voxtral.rawValue, forKey: selectedBackendDefaultsKey)
+            setupState = .ready
+            debugLog("🐢 Voxtral ready (lazy): \(selectedVoxtralModelID)")
+            return true
+        }
+
+        if voxtralAlreadyReady {
             selectedBackend = .voxtral
             UserDefaults.standard.set(TranscriptionBackend.voxtral.rawValue, forKey: selectedBackendDefaultsKey)
             setupState = .ready
@@ -420,10 +441,11 @@ extension LemonWhisperController {
         defer { isPreparingVoxtral = false }
 
         do {
-            try await VoxtralService.shared.warmupModel()
+            try await VoxtralService.shared.warmupModel(weightMaterializationBudget: .infinity)
             selectedBackend = .voxtral
             UserDefaults.standard.set(TranscriptionBackend.voxtral.rawValue, forKey: selectedBackendDefaultsKey)
             setupState = .ready
+            refreshRuntimeStatusSoon()
             debugLog("✅ Voxtral ready. Switched backend")
             return true
         } catch {
