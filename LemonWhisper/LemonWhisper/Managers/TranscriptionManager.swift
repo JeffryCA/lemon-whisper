@@ -77,6 +77,8 @@ class TranscriptionManager {
         backend: TranscriptionBackend,
         targetBundleIdentifier: String?,
         targetProcessID: pid_t?,
+        recordingStartedAt: Date? = nil,
+        recordingStoppedAt: Date? = nil,
         onActivityChanged: ((Bool) -> Void)? = nil
     ) {
         Task {
@@ -127,7 +129,9 @@ class TranscriptionManager {
                         rawText: sanitized,
                         language: language,
                         backend: backend,
-                        targetBundleIdentifier: targetBundleIdentifier
+                        targetBundleIdentifier: targetBundleIdentifier,
+                        recordingStartedAt: recordingStartedAt,
+                        recordingStoppedAt: recordingStoppedAt
                     )
                 } else {
                     savedRecord = nil

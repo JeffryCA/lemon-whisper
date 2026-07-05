@@ -98,6 +98,20 @@ struct MenuBarContentView: View {
             }
         }
 
+        Menu("Model Loading") {
+            ForEach(ModelLoadingMode.allCases) { mode in
+                Button {
+                    controller.setModelLoadingMode(mode)
+                } label: {
+                    if controller.modelLoadingMode == mode {
+                        Text("✓ \(mode.title)")
+                    } else {
+                        Text(mode.title)
+                    }
+                }
+            }
+        }
+
         Menu("Transcriptions") {
             Button("Open History") {
                 navigationState.show(.transcriptions)

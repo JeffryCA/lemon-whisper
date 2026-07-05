@@ -116,6 +116,20 @@ struct ContentView: View {
         )
     }
 
+    private var modelLoadingModeBinding: Binding<ModelLoadingMode> {
+        Binding(
+            get: { controller.modelLoadingMode },
+            set: { controller.setModelLoadingMode($0) }
+        )
+    }
+
+    private var modelIdleTimeoutBinding: Binding<ModelIdleTimeout> {
+        Binding(
+            get: { controller.modelIdleTimeout },
+            set: { controller.setModelIdleTimeout($0) }
+        )
+    }
+
     private func applyModelSelection(key: String) {
         guard let model = downloadedModels.first(where: { $0.id == key }) else { return }
         switch model.engine {
@@ -219,6 +233,33 @@ struct ContentView: View {
 
                 HomeValueRow(title: "Shortcut") {
                     ShortcutRecorderControl(shortcut: shortcutBinding)
+                }
+
+                Divider()
+
+                HomeValueRow(
+                    title: "Model loading",
+                    bottomPadding: controller.modelLoadingMode == .lazy ? 4 : 14
+                ) {
+                    Picker("", selection: modelLoadingModeBinding) {
+                        ForEach(ModelLoadingMode.allCases) { mode in
+                            Text(mode.menuTitle).tag(mode)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 220, alignment: .trailing)
+                }
+
+                if controller.modelLoadingMode == .lazy {
+                    HomeValueRow(title: "Idle timeout", topPadding: 4) {
+                        Picker("", selection: modelIdleTimeoutBinding) {
+                            ForEach(ModelIdleTimeout.allCases) { option in
+                                Text(option.title).tag(option)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 220, alignment: .trailing)
+                    }
                 }
 
                 Divider()
@@ -434,10 +475,19 @@ private struct SetupStatusCard: View {
 
 private struct HomeValueRow<Accessory: View>: View {
     let title: String
+    var topPadding: CGFloat = 14
+    var bottomPadding: CGFloat = 14
     let accessory: Accessory
 
-    init(title: String, @ViewBuilder accessory: () -> Accessory) {
+    init(
+        title: String,
+        topPadding: CGFloat = 14,
+        bottomPadding: CGFloat = 14,
+        @ViewBuilder accessory: () -> Accessory
+    ) {
         self.title = title
+        self.topPadding = topPadding
+        self.bottomPadding = bottomPadding
         self.accessory = accessory()
     }
 
@@ -451,6 +501,7 @@ private struct HomeValueRow<Accessory: View>: View {
             accessory
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 14)
+        .padding(.top, topPadding)
+        .padding(.bottom, bottomPadding)
     }
 }

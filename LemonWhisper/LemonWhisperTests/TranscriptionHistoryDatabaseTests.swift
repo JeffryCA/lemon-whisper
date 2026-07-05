@@ -66,6 +66,50 @@ struct TranscriptionHistoryDatabaseTests {
         #expect(records.isEmpty)
     }
 
+    @Test func persistsRecordingTimestamps() async throws {
+        let fileManager = FileManager.default
+        let tempDirectory = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fileManager.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: tempDirectory)
+        }
+
+        let database = try TranscriptionHistoryDatabase(
+            databaseURL: tempDirectory.appendingPathComponent("Transcriptions.sqlite")
+        )
+
+        let startedAt = Date(timeIntervalSince1970: 1000)
+        let stoppedAt = Date(timeIntervalSince1970: 1005)
+
+        _ = try await database.insert(
+            rawText: "timed transcription",
+            language: "en",
+            backend: "whisper",
+            targetBundleIdentifier: nil,
+            recordingStartedAt: startedAt,
+            recordingStoppedAt: stoppedAt
+        )
+
+        let records = try await database.fetchLatest(limit: 10)
+        #expect(records.count == 1)
+        #expect(records[0].recordingStartedAt == startedAt)
+        #expect(records[0].recordingStoppedAt == stoppedAt)
+
+        // Paste metadata updates must preserve the recording timestamps.
+        try await database.updatePasteMetadata(
+            id: records[0].id,
+            pasteStatus: "succeeded",
+            pastePath: "commandV",
+            pasteError: nil,
+            pasteCompletedAt: Date(timeIntervalSince1970: 1010)
+        )
+
+        let updated = try await database.fetchLatest(limit: 10)
+        #expect(updated[0].recordingStartedAt == startedAt)
+        #expect(updated[0].recordingStoppedAt == stoppedAt)
+        #expect(updated[0].pasteCompletedAt == Date(timeIntervalSince1970: 1010))
+    }
+
     @Test func updatesPasteMetadata() async throws {
         let fileManager = FileManager.default
         let tempDirectory = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)

@@ -242,6 +242,18 @@ extension LemonWhisperController {
         !downloadedWhisperModels.isEmpty || (supportsVoxtral && !downloadedVoxtralModels.isEmpty)
     }
 
+    /// Whether the selected backend's model is downloaded and on disk. Recording requires this,
+    /// so we never start capturing while a model is still downloading or during bootstrapping —
+    /// only while an already-downloaded model is loading into memory.
+    var hasUsableSelectedModel: Bool {
+        switch selectedBackend {
+        case .whisper:
+            return isWhisperModelDownloaded(selectedWhisperModelID)
+        case .voxtral:
+            return isVoxtralModelDownloaded(selectedVoxtralModelID)
+        }
+    }
+
     var showsSetupCard: Bool {
         setupState.isBlocking
     }
@@ -357,18 +369,26 @@ extension LemonWhisperController {
     }
 
     private func ensureWhisperReady() {
+        guard let selected = WhisperModelCatalog.selectedModelIfDownloaded() else {
+            let message = "Download a Whisper model to use Whisper."
+            whisperStatus = message
+            setupState = .blocked(message: message)
+            return
+        }
+
+        if modelLoadingMode == .lazy {
+            // Optimistic: the model exists on disk. It loads on demand (or in parallel with recording).
+            whisperStatus = "Whisper ready: \(selected.title)"
+            setupState = .ready
+            debugLog("🐢 Whisper ready (lazy): \(selected.id)")
+            return
+        }
+
         setupState = .preparingSelectedModel
         debugLog("🧠 Preparing Whisper model")
 
         Task { @MainActor in
             do {
-                guard let selected = WhisperModelCatalog.selectedModelIfDownloaded() else {
-                    let message = "Download a Whisper model to use Whisper."
-                    whisperStatus = message
-                    setupState = .blocked(message: message)
-                    return
-                }
-
                 _ = try await WhisperContext.createContext(path: selected.localURL.path)
                 try await WhisperModelCatalog.ensureVADDownloadedIfNeeded()
                 if let context = WhisperContext.getShared() {
@@ -406,7 +426,18 @@ extension LemonWhisperController {
             return false
         }
 
-        if await VoxtralService.shared.isReady {
+        let voxtralAlreadyReady = await VoxtralService.shared.isReady
+
+        if modelLoadingMode == .lazy && !voxtralAlreadyReady {
+            // Optimistic: the model exists on disk. It loads on demand (or in parallel with recording).
+            selectedBackend = .voxtral
+            UserDefaults.standard.set(TranscriptionBackend.voxtral.rawValue, forKey: selectedBackendDefaultsKey)
+            setupState = .ready
+            debugLog("🐢 Voxtral ready (lazy): \(selectedVoxtralModelID)")
+            return true
+        }
+
+        if voxtralAlreadyReady {
             selectedBackend = .voxtral
             UserDefaults.standard.set(TranscriptionBackend.voxtral.rawValue, forKey: selectedBackendDefaultsKey)
             setupState = .ready
@@ -420,7 +451,7 @@ extension LemonWhisperController {
         defer { isPreparingVoxtral = false }
 
         do {
-            try await VoxtralService.shared.warmupModel()
+            try await VoxtralService.shared.warmupModel(weightMaterializationBudget: .infinity)
             selectedBackend = .voxtral
             UserDefaults.standard.set(TranscriptionBackend.voxtral.rawValue, forKey: selectedBackendDefaultsKey)
             setupState = .ready

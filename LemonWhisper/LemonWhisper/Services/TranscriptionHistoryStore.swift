@@ -12,6 +12,8 @@ struct TranscriptionRecord: Identifiable, Hashable {
     let backend: String
     let language: String
     let targetBundleIdentifier: String?
+    let recordingStartedAt: Date?
+    let recordingStoppedAt: Date?
     let pasteStatus: String
     let pastePath: String?
     let pasteError: String?
@@ -99,7 +101,9 @@ actor TranscriptionHistoryDatabase {
         correctedText: String? = nil,
         language: String,
         backend: String,
-        targetBundleIdentifier: String?
+        targetBundleIdentifier: String?,
+        recordingStartedAt: Date? = nil,
+        recordingStoppedAt: Date? = nil
     ) throws -> TranscriptionRecord {
         let record = TranscriptionRecord(
             id: UUID(),
@@ -109,6 +113,8 @@ actor TranscriptionHistoryDatabase {
             backend: backend,
             language: language,
             targetBundleIdentifier: targetBundleIdentifier,
+            recordingStartedAt: recordingStartedAt,
+            recordingStoppedAt: recordingStoppedAt,
             pasteStatus: "pending",
             pastePath: nil,
             pasteError: nil,
@@ -124,11 +130,13 @@ actor TranscriptionHistoryDatabase {
             backend,
             language,
             target_bundle_identifier,
+            recording_started_at,
+            recording_stopped_at,
             paste_status,
             paste_path,
             paste_error,
             paste_completed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """
 
         let statement = try prepareStatement(sql)
@@ -141,10 +149,12 @@ actor TranscriptionHistoryDatabase {
         try bindText(record.backend, at: 5, in: statement)
         try bindText(record.language, at: 6, in: statement)
         try bindOptionalText(record.targetBundleIdentifier, at: 7, in: statement)
-        try bindText(record.pasteStatus, at: 8, in: statement)
-        try bindOptionalText(record.pastePath, at: 9, in: statement)
-        try bindOptionalText(record.pasteError, at: 10, in: statement)
-        sqlite3_bind_null(statement, 11)
+        bindOptionalDate(record.recordingStartedAt, at: 8, in: statement)
+        bindOptionalDate(record.recordingStoppedAt, at: 9, in: statement)
+        try bindText(record.pasteStatus, at: 10, in: statement)
+        try bindOptionalText(record.pastePath, at: 11, in: statement)
+        try bindOptionalText(record.pasteError, at: 12, in: statement)
+        sqlite3_bind_null(statement, 13)
 
         guard sqlite3_step(statement) == SQLITE_DONE else {
             throw TranscriptionHistoryError.statementExecutionFailed(lastErrorMessage())
@@ -163,6 +173,8 @@ actor TranscriptionHistoryDatabase {
             backend,
             language,
             target_bundle_identifier,
+            recording_started_at,
+            recording_stopped_at,
             paste_status,
             paste_path,
             paste_error,
@@ -191,6 +203,8 @@ actor TranscriptionHistoryDatabase {
             backend,
             language,
             target_bundle_identifier,
+            recording_started_at,
+            recording_stopped_at,
             paste_status,
             paste_path,
             paste_error,
@@ -220,12 +234,12 @@ actor TranscriptionHistoryDatabase {
             let correctedText = stringColumn(at: 2, in: statement)
             let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(statement, 3))
             let targetBundleIdentifier = stringColumn(at: 6, in: statement)
-            let pasteStatus = stringColumn(at: 7, in: statement) ?? "unknown"
-            let pastePath = stringColumn(at: 8, in: statement)
-            let pasteError = stringColumn(at: 9, in: statement)
-            let pasteCompletedAt = sqlite3_column_type(statement, 10) == SQLITE_NULL
-                ? nil
-                : Date(timeIntervalSince1970: sqlite3_column_double(statement, 10))
+            let recordingStartedAt = dateColumn(at: 7, in: statement)
+            let recordingStoppedAt = dateColumn(at: 8, in: statement)
+            let pasteStatus = stringColumn(at: 9, in: statement) ?? "unknown"
+            let pastePath = stringColumn(at: 10, in: statement)
+            let pasteError = stringColumn(at: 11, in: statement)
+            let pasteCompletedAt = dateColumn(at: 12, in: statement)
 
             records.append(
                 TranscriptionRecord(
@@ -236,6 +250,8 @@ actor TranscriptionHistoryDatabase {
                     backend: backend,
                     language: language,
                     targetBundleIdentifier: targetBundleIdentifier,
+                    recordingStartedAt: recordingStartedAt,
+                    recordingStoppedAt: recordingStoppedAt,
                     pasteStatus: pasteStatus,
                     pastePath: pastePath,
                     pasteError: pasteError,
@@ -335,12 +351,27 @@ actor TranscriptionHistoryDatabase {
             backend TEXT NOT NULL,
             language TEXT NOT NULL,
             target_bundle_identifier TEXT,
+            recording_started_at REAL,
+            recording_stopped_at REAL,
             paste_status TEXT NOT NULL DEFAULT 'unknown',
             paste_path TEXT,
             paste_error TEXT,
             paste_completed_at REAL
         );
         """,
+            on: connection
+        )
+
+        try addColumnIfNeeded(
+            named: "recording_started_at",
+            definition: "REAL",
+            to: "transcriptions",
+            on: connection
+        )
+        try addColumnIfNeeded(
+            named: "recording_stopped_at",
+            definition: "REAL",
+            to: "transcriptions",
             on: connection
         )
 
@@ -470,11 +501,26 @@ actor TranscriptionHistoryDatabase {
         try bindText(value, at: index, in: statement)
     }
 
+    private func bindOptionalDate(_ value: Date?, at index: Int32, in statement: OpaquePointer?) {
+        guard let value else {
+            sqlite3_bind_null(statement, index)
+            return
+        }
+        sqlite3_bind_double(statement, index, value.timeIntervalSince1970)
+    }
+
     private func stringColumn(at index: Int32, in statement: OpaquePointer?) -> String? {
         guard let pointer = sqlite3_column_text(statement, index) else {
             return nil
         }
         return String(cString: pointer)
+    }
+
+    private func dateColumn(at index: Int32, in statement: OpaquePointer?) -> Date? {
+        guard sqlite3_column_type(statement, index) != SQLITE_NULL else {
+            return nil
+        }
+        return Date(timeIntervalSince1970: sqlite3_column_double(statement, index))
     }
 
     private static func lastErrorMessage(on connection: OpaquePointer?) -> String {
@@ -558,7 +604,9 @@ final class TranscriptionHistoryStore: ObservableObject {
         rawText: String,
         language: String,
         backend: TranscriptionBackend,
-        targetBundleIdentifier: String?
+        targetBundleIdentifier: String?,
+        recordingStartedAt: Date? = nil,
+        recordingStoppedAt: Date? = nil
     ) async -> TranscriptionRecord? {
         let sanitized = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !sanitized.isEmpty else { return nil }
@@ -568,7 +616,9 @@ final class TranscriptionHistoryStore: ObservableObject {
                 rawText: sanitized,
                 language: language,
                 backend: backend.rawValue,
-                targetBundleIdentifier: targetBundleIdentifier
+                targetBundleIdentifier: targetBundleIdentifier,
+                recordingStartedAt: recordingStartedAt,
+                recordingStoppedAt: recordingStoppedAt
             )
             items.insert(record, at: 0)
             lastError = nil
@@ -605,6 +655,8 @@ final class TranscriptionHistoryStore: ObservableObject {
                     backend: existing.backend,
                     language: existing.language,
                     targetBundleIdentifier: existing.targetBundleIdentifier,
+                    recordingStartedAt: existing.recordingStartedAt,
+                    recordingStoppedAt: existing.recordingStoppedAt,
                     pasteStatus: pasteStatus,
                     pastePath: pastePath,
                     pasteError: pasteError,
@@ -669,6 +721,8 @@ final class TranscriptionHistoryStore: ObservableObject {
             "backend",
             "language",
             "target_bundle_identifier",
+            "recording_started_at",
+            "recording_stopped_at",
             "paste_status",
             "paste_path",
             "paste_error",
@@ -685,6 +739,8 @@ final class TranscriptionHistoryStore: ObservableObject {
                 record.backend,
                 record.language,
                 record.targetBundleIdentifier ?? "",
+                record.recordingStartedAt.map { Self.exportDateFormatter.string(from: $0) } ?? "",
+                record.recordingStoppedAt.map { Self.exportDateFormatter.string(from: $0) } ?? "",
                 record.pasteStatus,
                 record.pastePath ?? "",
                 record.pasteError ?? "",
