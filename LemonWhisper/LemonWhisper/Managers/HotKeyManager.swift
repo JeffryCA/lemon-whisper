@@ -5,6 +5,7 @@ import AppKit
 extension Notification.Name {
     static let toggleRecordingHotKey = Notification.Name("toggleRecordingHotKey")
     static let cancelRecordingHotKey = Notification.Name("cancelRecordingHotKey")
+    static let optionHoldHotKey = Notification.Name("optionHoldHotKey")
 }
 
 private func hotKeyHandler(
@@ -22,8 +23,13 @@ private func hotKeyHandler(
 enum HotKeyManager {
     private static var globalFlagsMonitor: Any?
     private static var localFlagsMonitor: Any?
+    private static var globalKeyDownMonitor: Any?
+    private static var localKeyDownMonitor: Any?
     private static var lastControlTapDate: Date?
     private static let doubleTapThreshold: TimeInterval = 0.35
+    private static var optionHoldWorkItem: DispatchWorkItem?
+    private static let optionHoldDuration: TimeInterval = 2.0
+    private static let modifierRelevantMask: NSEvent.ModifierFlags = [.command, .control, .option, .shift, .function]
     private static var handlerInstalled = false
 
     static func registerToggleRecordingHotKey(into hotKeyRef: inout EventHotKeyRef?, keyCode: UInt32, modifiers: UInt32) {
@@ -90,9 +96,23 @@ enum HotKeyManager {
             handleFlagsChanged(event)
             return event
         }
+
+        globalKeyDownMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { _ in
+            cancelPendingOptionHold()
+        }
+
+        localKeyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            cancelPendingOptionHold()
+            return event
+        }
     }
 
     private static func handleFlagsChanged(_ event: NSEvent) {
+        handleControlDoubleTap(event)
+        handleOptionHold(event)
+    }
+
+    private static func handleControlDoubleTap(_ event: NSEvent) {
         guard event.keyCode == 59 || event.keyCode == 62 else { return }
 
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -109,5 +129,29 @@ enum HotKeyManager {
         }
 
         lastControlTapDate = now
+    }
+
+    /// Fires `.optionHoldHotKey` if Option is held alone (no other modifier) for `optionHoldDuration`.
+    /// Any other key press, or releasing Option early, cancels the pending timer.
+    private static func handleOptionHold(_ event: NSEvent) {
+        guard event.keyCode == kVK_Option || event.keyCode == kVK_RightOption else { return }
+
+        let flags = event.modifierFlags.intersection(modifierRelevantMask)
+        guard flags == .option else {
+            cancelPendingOptionHold()
+            return
+        }
+
+        let workItem = DispatchWorkItem {
+            debugLog("⌨️ Option long-press detected")
+            NotificationCenter.default.post(name: .optionHoldHotKey, object: nil)
+        }
+        optionHoldWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + optionHoldDuration, execute: workItem)
+    }
+
+    private static func cancelPendingOptionHold() {
+        optionHoldWorkItem?.cancel()
+        optionHoldWorkItem = nil
     }
 }

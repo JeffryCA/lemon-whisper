@@ -43,5 +43,16 @@ extension LemonWhisperController {
                 self.cancelRecording()
             }
         }
+
+        NotificationCenter.default.addObserver(
+            forName: .optionHoldHotKey,
+            object: nil,
+            queue: .main
+        ) { _ in
+            debugLog("🔔 Option long-press notification received on main queue")
+            Task { @MainActor in
+                QuickPickHUD.shared.show()
+            }
+        }
     }
 }
