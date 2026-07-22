@@ -28,7 +28,8 @@ actor WhisperContext {
         samples: [Float],
         language: String = "en",
         prompt: String? = nil,
-        isLiveMode: Bool = false
+        isLiveMode: Bool = false,
+        useVAD: Bool = true
     ) -> Bool {
         guard let context = context else { return false }
         
@@ -78,7 +79,7 @@ actor WhisperContext {
         whisper_reset_timings(context)
         
         // Configure VAD if enabled by user and model is available
-        if let vadModelPath = self.vadModelPath {
+        if useVAD, let vadModelPath = self.vadModelPath {
             params.vad = true
             params.vad_model_path = (vadModelPath as NSString).utf8String
             

@@ -1,14 +1,15 @@
 import Foundation
 
-/// Persists user-configurable settings (microphone, recording shortcut) across launches.
+/// Persists user-configurable settings across launches.
 enum AppSettingsStore {
     static var defaults = UserDefaults.standard
     private static let recordingShortcutKey = "recordingShortcut"
+    private static let recordingShortcutsKey = "recordingShortcuts"
     private static let selectedMicrophoneUniqueIDKey = "selectedMicrophoneUniqueID"
+    private static let recordingIndicatorEnabledKey = "recordingIndicatorEnabled"
     private static let modelLoadingModeKey = "modelLoadingMode"
     private static let modelIdleTimeoutKey = "modelIdleTimeout"
 
-    /// How the transcription model is kept in memory. Defaults to `.fast` to preserve prior behavior.
     static var modelLoadingMode: ModelLoadingMode {
         get {
             guard let raw = defaults.string(forKey: modelLoadingModeKey),
@@ -20,30 +21,42 @@ enum AppSettingsStore {
         set { defaults.set(newValue.rawValue, forKey: modelLoadingModeKey) }
     }
 
-    /// Inactivity window before the model is unloaded in lazy mode. Defaults to 1 minute.
     static var modelIdleTimeout: ModelIdleTimeout {
         get {
             guard let raw = defaults.string(forKey: modelIdleTimeoutKey),
-                  let value = ModelIdleTimeout(rawValue: raw) else {
+                  let timeout = ModelIdleTimeout(rawValue: raw) else {
                 return .oneMinute
             }
-            return value
+            return timeout
         }
         set { defaults.set(newValue.rawValue, forKey: modelIdleTimeoutKey) }
     }
 
-    static var recordingShortcut: RecordingShortcut {
+    static var recordingShortcuts: [RecordingShortcut] {
         get {
-            guard let data = defaults.data(forKey: recordingShortcutKey),
-                  let decoded = try? JSONDecoder().decode(RecordingShortcut.self, from: data) else {
-                return .default
+            if let data = defaults.data(forKey: recordingShortcutsKey),
+               let decoded = try? JSONDecoder().decode([RecordingShortcut].self, from: data),
+               !decoded.isEmpty {
+                return decoded
             }
-            return decoded
+
+            // Migrate the single-shortcut preference used by earlier releases.
+            if let data = defaults.data(forKey: recordingShortcutKey),
+               let decoded = try? JSONDecoder().decode(RecordingShortcut.self, from: data) {
+                return [decoded]
+            }
+
+            return [.default]
         }
         set {
             guard let data = try? JSONEncoder().encode(newValue) else { return }
-            defaults.set(data, forKey: recordingShortcutKey)
+            defaults.set(data, forKey: recordingShortcutsKey)
         }
+    }
+
+    static var recordingIndicatorEnabled: Bool {
+        get { defaults.bool(forKey: recordingIndicatorEnabledKey) }
+        set { defaults.set(newValue, forKey: recordingIndicatorEnabledKey) }
     }
 
     /// `nil` means "use the system default input device".

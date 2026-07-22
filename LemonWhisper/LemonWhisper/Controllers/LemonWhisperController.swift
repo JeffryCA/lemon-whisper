@@ -22,7 +22,8 @@ final class LemonWhisperController: ObservableObject {
 
     @Published var selectedMicrophoneID: String? = AppSettingsStore.selectedMicrophoneUniqueID
     @Published var availableMicrophones: [MicrophoneDevice] = MicrophoneManager.availableDevices()
-    @Published var recordingShortcut: RecordingShortcut = AppSettingsStore.recordingShortcut
+    @Published var recordingShortcuts: [RecordingShortcut] = AppSettingsStore.recordingShortcuts
+    @Published var recordingIndicatorEnabled: Bool = AppSettingsStore.recordingIndicatorEnabled
     @Published var modelLoadingMode: ModelLoadingMode = AppSettingsStore.modelLoadingMode
     @Published var modelIdleTimeout: ModelIdleTimeout = AppSettingsStore.modelIdleTimeout
 
@@ -34,8 +35,14 @@ final class LemonWhisperController: ObservableObject {
     var targetProcessID: pid_t?
     var recordingStartedAt: Date?
     var lastRecordingDuration: TimeInterval?
-    var idleUnloadTimer: Timer?
-    var toggleHotKeyRef: EventHotKeyRef?
+    var recordingBackend: TranscriptionBackend?
+    var scheduledRecordingStop: DispatchWorkItem?
+    var modelWarmupTask: Task<Void, Never>?
+    var modelWarmupBackend: TranscriptionBackend?
+    var modelIdleUnloadTimers: [TranscriptionBackend: Timer] = [:]
+    var modelUnloadTasks: [TranscriptionBackend: Task<Void, Never>] = [:]
+    var activeTranscriptionCounts: [TranscriptionBackend: Int] = [:]
+    var toggleHotKeyRefs: [EventHotKeyRef] = []
 
     let selectedBackendDefaultsKey = "selectedTranscriptionBackend"
     let previewInitialSetup: Bool

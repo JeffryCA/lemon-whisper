@@ -1,21 +1,49 @@
 import SwiftUI
 import AppKit
 
-/// A button that, when clicked, captures the next key combo the user presses and turns it into
-/// a `RecordingShortcut`. Requires at least one modifier key; Escape cancels the capture.
+/// Records, adds, and removes global recording shortcuts. Requires at least one modifier key;
+/// Escape cancels the active capture.
 struct ShortcutRecorderControl: View {
-    @Binding var shortcut: RecordingShortcut
+    @Binding var shortcuts: [RecordingShortcut]
 
-    @State private var isCapturing = false
+    @State private var capturingIndex: Int?
     @State private var validationMessage: String?
     @State private var monitor: Any?
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 4) {
-            Button(isCapturing ? "Press a key combo…" : shortcut.displayString) {
-                beginCapture()
+            ForEach(Array(shortcuts.enumerated()), id: \.offset) { index, shortcut in
+                HStack(spacing: 6) {
+                    Button(capturingIndex == index ? "Press a key combo…" : shortcut.displayString) {
+                        beginCapture(at: index)
+                    }
+                    .buttonStyle(NeutralActionButtonStyle())
+
+                    if shortcuts.count > 1 {
+                        Button {
+                            removeShortcut(at: index)
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.caption.weight(.semibold))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                        .help("Remove shortcut")
+                    }
+                }
             }
-            .buttonStyle(NeutralActionButtonStyle())
+
+            Button {
+                beginCapture(at: shortcuts.count)
+            } label: {
+                Label(
+                    capturingIndex == shortcuts.count ? "Press a key combo…" : "Add shortcut",
+                    systemImage: "plus"
+                )
+            }
+            .buttonStyle(.plain)
+            .font(.caption)
+            .foregroundStyle(.secondary)
 
             if let validationMessage {
                 Text(validationMessage)
@@ -28,9 +56,9 @@ struct ShortcutRecorderControl: View {
         .onDisappear { endCapture() }
     }
 
-    private func beginCapture() {
-        guard !isCapturing else { return }
-        isCapturing = true
+    private func beginCapture(at index: Int) {
+        endCapture()
+        capturingIndex = index
         validationMessage = nil
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
             handle(event)
@@ -52,7 +80,7 @@ struct ShortcutRecorderControl: View {
             return
         }
 
-        shortcut = RecordingShortcut(
+        let shortcut = RecordingShortcut(
             keyCode: UInt32(event.keyCode),
             character: String(character),
             usesCommand: flags.contains(.command),
@@ -60,8 +88,30 @@ struct ShortcutRecorderControl: View {
             usesOption: flags.contains(.option),
             usesControl: flags.contains(.control)
         )
+
+        guard let capturingIndex else { return }
+        guard !shortcuts.enumerated().contains(where: { index, existing in
+            existing.conflicts(with: shortcut) && index != capturingIndex
+        }) else {
+            validationMessage = "That shortcut is already configured."
+            return
+        }
+
+        if capturingIndex < shortcuts.count {
+            shortcuts[capturingIndex] = shortcut
+        } else {
+            shortcuts.append(shortcut)
+        }
         validationMessage = nil
         endCapture()
+    }
+
+    private func removeShortcut(at index: Int) {
+        guard shortcuts.indices.contains(index), shortcuts.count > 1 else { return }
+        if capturingIndex == index {
+            endCapture()
+        }
+        shortcuts.remove(at: index)
     }
 
     private func endCapture() {
@@ -69,6 +119,6 @@ struct ShortcutRecorderControl: View {
             NSEvent.removeMonitor(monitor)
         }
         monitor = nil
-        isCapturing = false
+        capturingIndex = nil
     }
 }

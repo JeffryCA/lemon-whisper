@@ -5,13 +5,22 @@ import AVFoundation
 /// Works on macOS without any AVAudioSession gymnastics.
 class AudioRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
 
+    private static let temporaryRecordingPrefix = "recording-"
+    private static let staleRecordingAge: TimeInterval = 24 * 60 * 60
+
     /// Latest ready‑to‑play WAV file.
     @Published var latestWavURL: URL?
 
     private var audioRecorder: AVAudioRecorder?
     private var isRecording = false
 
-    /// Begin recording into `<tmp>/recording.wav`.
+    override init() {
+        super.init()
+        Self.removeStaleTemporaryRecordings()
+    }
+
+    /// Begin recording into a unique temporary WAV so a later recording cannot overwrite audio
+    /// that is still being transcribed.
     @discardableResult
     func startRecording() -> Bool {
         guard !isRecording else { return false }
@@ -26,8 +35,10 @@ class AudioRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
             AVLinearPCMIsFloatKey: false
         ]
 
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("recording.wav")
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(Self.temporaryRecordingPrefix)\(UUID().uuidString).wav")
         print("🎙 Recording WAV to:", url)
+        latestWavURL = nil
 
         MicrophoneManager.applySelectedInputDeviceIfNeeded(uniqueID: AppSettingsStore.selectedMicrophoneUniqueID)
 
@@ -40,6 +51,7 @@ class AudioRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
                 print("❌ record() returned false")
                 MicrophoneManager.restorePreviousInputDeviceIfNeeded()
                 audioRecorder = nil
+                try? FileManager.default.removeItem(at: url)
                 return false
             }
             isRecording = true
@@ -49,6 +61,7 @@ class AudioRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
             print("❌ Failed to start recording:", error)
             MicrophoneManager.restorePreviousInputDeviceIfNeeded()
             audioRecorder = nil
+            try? FileManager.default.removeItem(at: url)
             return false
         }
     }
@@ -90,6 +103,36 @@ class AudioRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
         if let url {
             try? FileManager.default.removeItem(at: url)
             print("🗑️ Recording cancelled:", url.lastPathComponent)
+        }
+    }
+
+    /// Removes exactly the completed recording handed to a transcription task.
+    func deleteTemporaryRecording(at url: URL) {
+        do {
+            try FileManager.default.removeItem(at: url)
+            if latestWavURL == url { latestWavURL = nil }
+        } catch where (error as NSError).code == NSFileNoSuchFileError {
+            if latestWavURL == url { latestWavURL = nil }
+        } catch {
+            debugLog("⚠️ Could not remove temporary recording \(url.lastPathComponent): \(error.localizedDescription)")
+        }
+    }
+
+    private static func removeStaleTemporaryRecordings() {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+        guard let urls = try? fileManager.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
+
+        let cutoff = Date().addingTimeInterval(-staleRecordingAge)
+        for url in urls where url.lastPathComponent.hasPrefix(temporaryRecordingPrefix) && url.pathExtension == "wav" {
+            let modifiedAt = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+            if modifiedAt.map({ $0 < cutoff }) ?? true {
+                try? fileManager.removeItem(at: url)
+            }
         }
     }
 

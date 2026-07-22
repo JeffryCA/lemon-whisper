@@ -43,4 +43,25 @@ struct RecordingShortcutTests {
 
         #expect(shortcut.displayString == "⌃⌥⇧⌘Y")
     }
+
+    @Test func conflictUsesRegisteredKeyAndModifiers() {
+        let first = RecordingShortcut(
+            keyCode: 6,
+            character: "z",
+            usesCommand: false,
+            usesShift: false,
+            usesOption: false,
+            usesControl: true
+        )
+        let samePhysicalShortcutOnAnotherLayout = RecordingShortcut(
+            keyCode: 6,
+            character: "y",
+            usesCommand: false,
+            usesShift: false,
+            usesOption: false,
+            usesControl: true
+        )
+
+        #expect(first.conflicts(with: samePhysicalShortcutOnAnotherLayout))
+    }
 }

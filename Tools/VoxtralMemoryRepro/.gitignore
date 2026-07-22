@@ -1,0 +1,8 @@
+.build/
+.swiftpm/
+configuration.json
+heap/
+metrics.csv
+metrics.jsonl
+summary.json
+*.profraw

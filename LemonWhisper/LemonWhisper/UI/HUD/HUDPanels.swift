@@ -1,4 +1,44 @@
 import AppKit
+import SwiftUI
+
+/// The recording HUD's visual content. Keep window lifecycle and cursor tracking in
+/// `RecordingPulseHUD`; this view exists separately so its appearance is editable in Canvas.
+struct RecordingIndicatorView: View {
+    let size: CGFloat
+
+    init(size: CGFloat = 30) {
+        self.size = size
+    }
+
+    var body: some View {
+        HUDGlassEffectView(cornerRadius: size / 2)
+            .frame(width: size, height: size)
+            .clipShape(Circle())
+    }
+}
+
+private struct HUDGlassEffectView: NSViewRepresentable {
+    let cornerRadius: CGFloat
+
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        configure(view)
+        return view
+    }
+
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {
+        configure(view)
+    }
+
+    private func configure(_ view: NSVisualEffectView) {
+        view.material = .hudWindow
+        view.blendingMode = .behindWindow
+        view.state = .active
+        view.wantsLayer = true
+        view.layer?.cornerRadius = cornerRadius
+        view.layer?.masksToBounds = true
+    }
+}
 
 private func makeFloatingHUDPanel(size: CGSize) -> NSPanel {
     let panel = NSPanel(
@@ -91,7 +131,7 @@ final class RecordingPulseHUD {
 
     private init() {}
 
-    func showPulse(isRecording: Bool) {
+    func showPulse(isRecording: Bool, persistUntilRecordingStops: Bool = false) {
         ensurePanel()
         guard let panel else { return }
 
@@ -104,6 +144,10 @@ final class RecordingPulseHUD {
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.10
             panel.animator().alphaValue = 1
+        }
+
+        if isRecording && persistUntilRecordingStops {
+            return
         }
 
         let hideItem = DispatchWorkItem { [weak self] in
@@ -128,12 +172,26 @@ final class RecordingPulseHUD {
         guard panel == nil else { return }
 
         let panel = makeFloatingHUDPanel(size: CGSize(width: bubbleSize, height: bubbleSize))
-        let container = makeGlassHUDContainer(size: bubbleSize)
-        panel.contentView = container
+        let indicator = NSHostingView(rootView: RecordingIndicatorView(size: bubbleSize))
+        indicator.frame = NSRect(x: 0, y: 0, width: bubbleSize, height: bubbleSize)
+        panel.contentView = indicator
 
         self.panel = panel
         self.cursorTracker = CursorTrackingPanelController(panel: panel)
     }
+}
+
+#Preview("Recording indicator") {
+    ZStack {
+        LinearGradient(
+            colors: [Color(nsColor: .windowBackgroundColor), Color.accentColor.opacity(0.18)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+
+        RecordingIndicatorView()
+    }
+    .frame(width: 160, height: 100)
 }
 
 @MainActor

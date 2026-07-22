@@ -1,8 +1,16 @@
+import AppKit
 import SwiftUI
+
+final class LemonWhisperAppDelegate: NSObject, NSApplicationDelegate {
+    func applicationWillTerminate(_ notification: Notification) {
+        VoxtralWorkerProcessRegistry.shared.terminateAll()
+    }
+}
 
 @MainActor
 @main
 struct LemonWhisperApp: App {
+    @NSApplicationDelegateAdaptor(LemonWhisperAppDelegate.self) private var appDelegate
     private let controller: LemonWhisperController
     private let historyStore: TranscriptionHistoryStore
     private let navigationState: AppNavigationState

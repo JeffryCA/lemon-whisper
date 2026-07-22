@@ -9,7 +9,6 @@ enum ModelIdleTimeout: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    /// Seconds of inactivity before the model is unloaded.
     var seconds: TimeInterval {
         switch self {
         case .thirtySeconds: return 30

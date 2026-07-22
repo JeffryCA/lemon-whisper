@@ -10,7 +10,10 @@ struct MenuBarContentView: View {
         Button(controller.recordingButtonTitle) {
             controller.toggleRecording()
         }
-        .keyboardShortcut(controller.recordingShortcut.keyEquivalent, modifiers: controller.recordingShortcut.swiftUIModifiers)
+        .keyboardShortcut(
+            controller.recordingShortcuts.first?.keyEquivalent ?? RecordingShortcut.default.keyEquivalent,
+            modifiers: controller.recordingShortcuts.first?.swiftUIModifiers ?? RecordingShortcut.default.swiftUIModifiers
+        )
         .disabled(!controller.isRecording && !controller.canStartNewRecording)
 
         Divider()

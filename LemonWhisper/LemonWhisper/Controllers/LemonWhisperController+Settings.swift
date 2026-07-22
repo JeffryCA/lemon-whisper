@@ -11,13 +11,30 @@ extension LemonWhisperController {
         AppSettingsStore.selectedMicrophoneUniqueID = uniqueID
     }
 
-    func updateRecordingShortcut(_ shortcut: RecordingShortcut) {
-        recordingShortcut = shortcut
-        AppSettingsStore.recordingShortcut = shortcut
-        HotKeyManager.updateToggleRecordingHotKey(
-            into: &toggleHotKeyRef,
-            keyCode: shortcut.keyCode,
-            modifiers: shortcut.carbonModifiers
+    func updateRecordingShortcuts(_ shortcuts: [RecordingShortcut]) {
+        let uniqueShortcuts = shortcuts.reduce(into: [RecordingShortcut]()) { result, shortcut in
+            if !result.contains(where: { $0.conflicts(with: shortcut) }) {
+                result.append(shortcut)
+            }
+        }
+        guard !uniqueShortcuts.isEmpty else { return }
+
+        recordingShortcuts = uniqueShortcuts
+        AppSettingsStore.recordingShortcuts = uniqueShortcuts
+        HotKeyManager.updateToggleRecordingHotKeys(
+            into: &toggleHotKeyRefs,
+            shortcuts: uniqueShortcuts
+        )
+    }
+
+    func setRecordingIndicatorEnabled(_ enabled: Bool) {
+        recordingIndicatorEnabled = enabled
+        AppSettingsStore.recordingIndicatorEnabled = enabled
+
+        guard isRecording else { return }
+        RecordingPulseHUD.shared.showPulse(
+            isRecording: enabled,
+            persistUntilRecordingStops: enabled
         )
     }
 }

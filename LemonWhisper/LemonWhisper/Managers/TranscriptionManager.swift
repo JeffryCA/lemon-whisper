@@ -4,7 +4,7 @@ import Carbon
 import AppKit
 import ApplicationServices
 
-enum TranscriptionBackend: String, CaseIterable, Identifiable {
+enum TranscriptionBackend: String, CaseIterable, Identifiable, Hashable {
     case whisper
     case voxtral
 
@@ -35,6 +35,7 @@ class TranscriptionManager {
         Task {
             do {
                 let tempURL = try FileManager.default.writeBufferToWav(buffer)
+                defer { try? FileManager.default.removeItem(at: tempURL) }
                 let file = try AVAudioFile(forReading: tempURL)
                 let totalFrames = Int(file.length)
                 guard
@@ -106,6 +107,7 @@ class TranscriptionManager {
                     let channelPtr = floatData[0]
                     let sampleCount = Int(buffer.frameLength)
                     let samples = Array(UnsafeBufferPointer(start: channelPtr, count: sampleCount))
+                    let duration = Double(sampleCount) / file.processingFormat.sampleRate
 
                     let ctx = try await ensureWhisperContextLoaded()
 
@@ -113,7 +115,10 @@ class TranscriptionManager {
                         samples: samples,
                         language: language,
                         prompt: nil,
-                        isLiveMode: false
+                        isLiveMode: false,
+                        // The VAD requires 250 ms of detected speech. For sub-second clips,
+                        // bypass it so a quick word is not discarded before transcription.
+                        useVAD: duration >= 1
                     )
                     result = ok ? await ctx.getTranscription().trimmingCharacters(in: .whitespacesAndNewlines) : "Transcription failed."
                 case .voxtral:
@@ -121,7 +126,10 @@ class TranscriptionManager {
                 }
 
                 let sanitized = result.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !sanitized.isEmpty else { return }
+                guard !sanitized.isEmpty else {
+                    debugLog("⚠️ Transcription produced no text (backend: \(backend.rawValue), file: \(url.lastPathComponent))")
+                    return
+                }
 
                 let savedRecord: TranscriptionRecord?
                 if sanitized != "Transcription failed." {
@@ -153,7 +161,7 @@ class TranscriptionManager {
                 }
 
             } catch {
-                print("❌ Error during transcription: \(error)")
+                debugLog("❌ Error during transcription (backend: \(backend.rawValue), file: \(url.lastPathComponent)): \(error)")
             }
         }
     }

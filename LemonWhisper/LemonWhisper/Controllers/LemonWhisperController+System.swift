@@ -8,14 +8,15 @@ extension LemonWhisperController {
     }
 
     func refreshRuntimeStatus() {
-        processMemoryMB = currentProcessMemoryMB()
+        processMemoryMB = currentProcessMemoryMB(
+            including: VoxtralWorkerProcessRegistry.shared.processIdentifiers()
+        )
     }
 
     func setupHotKeys() {
-        HotKeyManager.registerToggleRecordingHotKey(
-            into: &toggleHotKeyRef,
-            keyCode: recordingShortcut.keyCode,
-            modifiers: recordingShortcut.carbonModifiers
+        HotKeyManager.registerToggleRecordingHotKeys(
+            into: &toggleHotKeyRefs,
+            shortcuts: recordingShortcuts
         )
     }
 
@@ -37,9 +38,9 @@ extension LemonWhisperController {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            guard let self, self.isRecording else { return }
-            debugLog("🔔 Cancel recording notification received on main queue")
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
+                guard let self, self.isRecording else { return }
+                debugLog("🔔 Cancel recording notification received on main queue")
                 self.cancelRecording()
             }
         }

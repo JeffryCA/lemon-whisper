@@ -6,20 +6,20 @@ import Testing
 struct AppSettingsStoreTests {
 
     @Test func defaultRecordingShortcutMatchesPreviousHardcodedShortcut() {
-        withTemporaryDefaults {
-            let shortcut = AppSettingsStore.recordingShortcut
+        withTemporaryDefaults { _ in
+            let shortcut = AppSettingsStore.recordingShortcuts.first
 
-            #expect(shortcut.usesControl)
-            #expect(!shortcut.usesCommand)
-            #expect(!shortcut.usesShift)
-            #expect(!shortcut.usesOption)
-            #expect(shortcut.character == "y")
-            #expect(shortcut.displayString == "⌃Y")
+            #expect(shortcut?.usesControl == true)
+            #expect(shortcut?.usesCommand == false)
+            #expect(shortcut?.usesShift == false)
+            #expect(shortcut?.usesOption == false)
+            #expect(shortcut?.character == "y")
+            #expect(shortcut?.displayString == "⌃Y")
         }
     }
 
-    @Test func recordingShortcutRoundTripsThroughUserDefaults() {
-        withTemporaryDefaults {
+    @Test func recordingShortcutsRoundTripThroughUserDefaults() {
+        withTemporaryDefaults { _ in
             let custom = RecordingShortcut(
                 keyCode: 15,
                 character: "r",
@@ -29,16 +29,32 @@ struct AppSettingsStoreTests {
                 usesControl: false
             )
 
-            AppSettingsStore.recordingShortcut = custom
-            let loaded = AppSettingsStore.recordingShortcut
+            AppSettingsStore.recordingShortcuts = [.default, custom]
+            let loaded = AppSettingsStore.recordingShortcuts
 
-            #expect(loaded == custom)
-            #expect(loaded.displayString == "⇧⌘R")
+            #expect(loaded == [.default, custom])
+            #expect(loaded.last?.displayString == "⇧⌘R")
+        }
+    }
+
+    @Test func legacySingleRecordingShortcutMigrates() {
+        withTemporaryDefaults { defaults in
+            let legacy = RecordingShortcut(
+                keyCode: 15,
+                character: "r",
+                usesCommand: true,
+                usesShift: false,
+                usesOption: false,
+                usesControl: false
+            )
+            defaults.set(try? JSONEncoder().encode(legacy), forKey: "recordingShortcut")
+
+            #expect(AppSettingsStore.recordingShortcuts == [legacy])
         }
     }
 
     @Test func selectedMicrophoneUniqueIDRoundTripsThroughUserDefaults() {
-        withTemporaryDefaults {
+        withTemporaryDefaults { _ in
             #expect(AppSettingsStore.selectedMicrophoneUniqueID == nil)
 
             AppSettingsStore.selectedMicrophoneUniqueID = "com.example.mic"
@@ -49,8 +65,16 @@ struct AppSettingsStoreTests {
         }
     }
 
+    @Test func recordingIndicatorDefaultsOffAndRoundTrips() {
+        withTemporaryDefaults { _ in
+            #expect(!AppSettingsStore.recordingIndicatorEnabled)
+            AppSettingsStore.recordingIndicatorEnabled = true
+            #expect(AppSettingsStore.recordingIndicatorEnabled)
+        }
+    }
+
     @Test func modelLoadingModeDefaultsToFastAndRoundTrips() {
-        withTemporaryDefaults {
+        withTemporaryDefaults { _ in
             #expect(AppSettingsStore.modelLoadingMode == .fast)
 
             AppSettingsStore.modelLoadingMode = .lazy
@@ -59,17 +83,17 @@ struct AppSettingsStoreTests {
     }
 
     @Test func modelIdleTimeoutDefaultsToOneMinuteAndRoundTrips() {
-        withTemporaryDefaults {
+        withTemporaryDefaults { _ in
             #expect(AppSettingsStore.modelIdleTimeout == .oneMinute)
             #expect(AppSettingsStore.modelIdleTimeout.seconds == 60)
 
-            AppSettingsStore.modelIdleTimeout = .fiveMinutes
-            #expect(AppSettingsStore.modelIdleTimeout == .fiveMinutes)
-            #expect(AppSettingsStore.modelIdleTimeout.seconds == 300)
+            AppSettingsStore.modelIdleTimeout = .thirtySeconds
+            #expect(AppSettingsStore.modelIdleTimeout == .thirtySeconds)
+            #expect(AppSettingsStore.modelIdleTimeout.seconds == 30)
         }
     }
 
-    private func withTemporaryDefaults(_ body: () -> Void) {
+    private func withTemporaryDefaults(_ body: (UserDefaults) -> Void) {
         let suiteName = "LemonWhisperTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         let previousDefaults = AppSettingsStore.defaults
@@ -78,6 +102,6 @@ struct AppSettingsStoreTests {
             AppSettingsStore.defaults = previousDefaults
             defaults.removePersistentDomain(forName: suiteName)
         }
-        body()
+        body(defaults)
     }
 }

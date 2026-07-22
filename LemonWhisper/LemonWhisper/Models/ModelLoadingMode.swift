@@ -2,9 +2,7 @@ import Foundation
 
 /// Controls how aggressively the selected transcription model is kept in memory.
 enum ModelLoadingMode: String, CaseIterable, Identifiable {
-    /// Load the model at startup and keep it resident. Fastest transcriptions, highest memory use.
     case fast
-    /// Skip startup loading and free the model after a period of inactivity. Lower memory, slower first transcription.
     case lazy
 
     var id: String { rawValue }
@@ -20,10 +18,8 @@ enum ModelLoadingMode: String, CaseIterable, Identifiable {
 
     var menuTitle: String {
         switch self {
-        case .fast:
-            return "Fast"
-        case .lazy:
-            return "Lazy"
+        case .fast: return "Fast"
+        case .lazy: return "Lazy"
         }
     }
 }

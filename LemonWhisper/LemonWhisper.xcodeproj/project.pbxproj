@@ -9,7 +9,12 @@
 /* Begin PBXBuildFile section */
 		643AE2282E33BEC90097908D /* whisper.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 643AE2272E33BEC90097908D /* whisper.xcframework */; };
 		643AE2292E33BEC90097908D /* whisper.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 643AE2272E33BEC90097908D /* whisper.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
-		64F0A0032E5000010097908D /* VoxtralCore in Frameworks */ = {isa = PBXBuildFile; productRef = 64F0A0022E5000010097908D /* VoxtralCore */; };
+		64F0B0032E6000010097908D /* LemonWhisper/WorkerProtocol/VoxtralWorkerProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64F0B0012E6000010097908D /* LemonWhisper/WorkerProtocol/VoxtralWorkerProtocol.swift */; };
+		64F0B0042E6000010097908D /* LemonWhisper/WorkerProtocol/VoxtralJSONLines.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64F0B0022E6000010097908D /* LemonWhisper/WorkerProtocol/VoxtralJSONLines.swift */; };
+		64F0B0052E6000010097908D /* VoxtralCore in Frameworks */ = {isa = PBXBuildFile; productRef = 64F0A0022E5000010097908D /* VoxtralCore */; };
+		64F0B0062E6000010097908D /* VoxtralWorker in Embed Voxtral Worker */ = {isa = PBXBuildFile; fileRef = 64F0B0002E6000010097908D /* VoxtralWorker */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		64F0B0222E6000010097908D /* mlx-swift_Cmlx.bundle in Embed Voxtral Worker */ = {isa = PBXBuildFile; fileRef = 64F0B0202E6000010097908D /* mlx-swift_Cmlx.bundle */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		64F0B0232E6000010097908D /* swift-transformers_Hub.bundle in Embed Voxtral Worker */ = {isa = PBXBuildFile; fileRef = 64F0B0212E6000010097908D /* swift-transformers_Hub.bundle */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -27,6 +32,13 @@
 			remoteGlobalIDString = 64B79E012E31F52A00096BEF;
 			remoteInfo = LemonWhisper;
 		};
+		64F0B0072E6000010097908D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 64B79DFA2E31F52A00096BEF /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 64F0B0102E6000010097908D;
+			remoteInfo = VoxtralWorker;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -41,6 +53,19 @@
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		64F0B0092E6000010097908D /* Embed Voxtral Worker */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = Contents/Helpers;
+			dstSubfolderSpec = 1;
+			files = (
+				64F0B0062E6000010097908D /* VoxtralWorker in Embed Voxtral Worker */,
+				64F0B0222E6000010097908D /* mlx-swift_Cmlx.bundle in Embed Voxtral Worker */,
+				64F0B0232E6000010097908D /* swift-transformers_Hub.bundle in Embed Voxtral Worker */,
+			);
+			name = "Embed Voxtral Worker";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -49,6 +74,11 @@
 		64B79E102E31F52C00096BEF /* LemonWhisperTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LemonWhisperTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		64B79E1A2E31F52C00096BEF /* LemonWhisperUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LemonWhisperUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		64B79E2E2E31F52C00096BEF /* LemonWhisper/Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = LemonWhisper/Info.plist; sourceTree = "<group>"; };
+		64F0B0002E6000010097908D /* VoxtralWorker */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = VoxtralWorker; sourceTree = BUILT_PRODUCTS_DIR; };
+		64F0B0012E6000010097908D /* LemonWhisper/WorkerProtocol/VoxtralWorkerProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LemonWhisper/WorkerProtocol/VoxtralWorkerProtocol.swift; sourceTree = "<group>"; };
+		64F0B0022E6000010097908D /* LemonWhisper/WorkerProtocol/VoxtralJSONLines.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LemonWhisper/WorkerProtocol/VoxtralJSONLines.swift; sourceTree = "<group>"; };
+		64F0B0202E6000010097908D /* mlx-swift_Cmlx.bundle */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = "mlx-swift_Cmlx.bundle"; sourceTree = BUILT_PRODUCTS_DIR; };
+		64F0B0212E6000010097908D /* swift-transformers_Hub.bundle */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = "swift-transformers_Hub.bundle"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -80,6 +110,11 @@
 			path = LemonWhisperUITests;
 			sourceTree = "<group>";
 		};
+		64F0B0112E6000010097908D /* VoxtralWorker */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = VoxtralWorker;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -87,7 +122,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				64F0A0032E5000010097908D /* VoxtralCore in Frameworks */,
 				643AE2282E33BEC90097908D /* whisper.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -106,6 +140,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		64F0B0132E6000010097908D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				64F0B0052E6000010097908D /* VoxtralCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -121,6 +163,8 @@
 			isa = PBXGroup;
 			children = (
 				643AE2272E33BEC90097908D /* whisper.xcframework */,
+				64F0B0202E6000010097908D /* mlx-swift_Cmlx.bundle */,
+				64F0B0212E6000010097908D /* swift-transformers_Hub.bundle */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -131,6 +175,9 @@
 				64B79E042E31F52A00096BEF /* LemonWhisper */,
 				64B79E132E31F52C00096BEF /* LemonWhisperTests */,
 				64B79E1D2E31F52C00096BEF /* LemonWhisperUITests */,
+				64F0B0112E6000010097908D /* VoxtralWorker */,
+				64F0B0012E6000010097908D /* LemonWhisper/WorkerProtocol/VoxtralWorkerProtocol.swift */,
+				64F0B0022E6000010097908D /* LemonWhisper/WorkerProtocol/VoxtralJSONLines.swift */,
 				643AE2262E33BEC80097908D /* Frameworks */,
 				64B79E032E31F52A00096BEF /* Products */,
 				640B626D2E3455F80079DDA4 /* Recovered References */,
@@ -143,6 +190,7 @@
 				64B79E022E31F52A00096BEF /* LemonWhisper.app */,
 				64B79E102E31F52C00096BEF /* LemonWhisperTests.xctest */,
 				64B79E1A2E31F52C00096BEF /* LemonWhisperUITests.xctest */,
+				64F0B0002E6000010097908D /* VoxtralWorker */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -158,17 +206,18 @@
 				64B79DFF2E31F52A00096BEF /* Frameworks */,
 				64B79E002E31F52A00096BEF /* Resources */,
 				643AE22A2E33BEC90097908D /* Embed Frameworks */,
+				64F0B0092E6000010097908D /* Embed Voxtral Worker */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				64F0B0082E6000010097908D /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				64B79E042E31F52A00096BEF /* LemonWhisper */,
 			);
 			name = LemonWhisper;
 			packageProductDependencies = (
-				64F0A0022E5000010097908D /* VoxtralCore */,
 			);
 			productName = LemonWhisper;
 			productReference = 64B79E022E31F52A00096BEF /* LemonWhisper.app */;
@@ -220,6 +269,28 @@
 			productReference = 64B79E1A2E31F52C00096BEF /* LemonWhisperUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		64F0B0102E6000010097908D /* VoxtralWorker */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 64F0B0192E6000010097908D /* Build configuration list for PBXNativeTarget "VoxtralWorker" */;
+			buildPhases = (
+				64F0B0122E6000010097908D /* Sources */,
+				64F0B0132E6000010097908D /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				64F0B0112E6000010097908D /* VoxtralWorker */,
+			);
+			name = VoxtralWorker;
+			packageProductDependencies = (
+				64F0A0022E5000010097908D /* VoxtralCore */,
+			);
+			productName = VoxtralWorker;
+			productReference = 64F0B0002E6000010097908D /* VoxtralWorker */;
+			productType = "com.apple.product-type.tool";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -228,7 +299,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1640;
-				LastUpgradeCheck = 2640;
+				LastUpgradeCheck = 2660;
 				TargetAttributes = {
 					64B79E012E31F52A00096BEF = {
 						CreatedOnToolsVersion = 16.4;
@@ -240,6 +311,9 @@
 					64B79E192E31F52C00096BEF = {
 						CreatedOnToolsVersion = 16.4;
 						TestTargetID = 64B79E012E31F52A00096BEF;
+					};
+					64F0B0102E6000010097908D = {
+						CreatedOnToolsVersion = 16.4;
 					};
 				};
 			};
@@ -263,6 +337,7 @@
 				64B79E012E31F52A00096BEF /* LemonWhisper */,
 				64B79E0F2E31F52C00096BEF /* LemonWhisperTests */,
 				64B79E192E31F52C00096BEF /* LemonWhisperUITests */,
+				64F0B0102E6000010097908D /* VoxtralWorker */,
 			);
 		};
 /* End PBXProject section */
@@ -313,6 +388,15 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		64F0B0122E6000010097908D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				64F0B0032E6000010097908D /* LemonWhisper/WorkerProtocol/VoxtralWorkerProtocol.swift in Sources */,
+				64F0B0042E6000010097908D /* LemonWhisper/WorkerProtocol/VoxtralJSONLines.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -325,6 +409,11 @@
 			isa = PBXTargetDependency;
 			target = 64B79E012E31F52A00096BEF /* LemonWhisper */;
 			targetProxy = 64B79E1B2E31F52C00096BEF /* PBXContainerItemProxy */;
+		};
+		64F0B0082E6000010097908D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 64F0B0102E6000010097908D /* VoxtralWorker */;
+			targetProxy = 64F0B0072E6000010097908D /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -598,6 +687,36 @@
 			};
 			name = Release;
 		};
+		64F0B0172E6000010097908D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = Q9U8224WWM;
+				ENABLE_HARDENED_RUNTIME = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.5;
+				OTHER_SWIFT_FLAGS = "-parse-as-library";
+				PRODUCT_NAME = VoxtralWorker;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		64F0B0182E6000010097908D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = Q9U8224WWM;
+				ENABLE_HARDENED_RUNTIME = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.5;
+				OTHER_SWIFT_FLAGS = "-parse-as-library";
+				PRODUCT_NAME = VoxtralWorker;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -637,6 +756,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
+		64F0B0192E6000010097908D /* Build configuration list for PBXNativeTarget "VoxtralWorker" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				64F0B0172E6000010097908D /* Debug */,
+				64F0B0182E6000010097908D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -644,8 +772,8 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/VincentGourbin/mlx-voxtral-swift";
 			requirement = {
-				branch = main;
-				kind = branch;
+				kind = exactVersion;
+				version = 2.2.0;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */

@@ -2,14 +2,14 @@ import Foundation
 
 /// Backend-agnostic control over whether a transcription model is resident in memory.
 ///
-/// Both transcription backends already load lazily at transcription time; this protocol
-/// lets the app proactively warm up (fast mode / parallel-with-recording) or free memory
-/// (lazy idle timeout) without the caller needing to know which backend is active.
+/// Both transcription backends already load lazily at transcription time; this protocol lets the
+/// app proactively warm up (fast mode / parallel-with-recording) or free memory after the selected
+/// lazy idle timeout without the caller needing to know which backend is active.
 protocol ModelMemoryController: Sendable {
     func isLoaded() async -> Bool
     /// Load the model. If `weightMaterializationBudget` is non-nil, also make weights fully
     /// resident now — but only if the backend expects that to complete within the budget (e.g.
-    /// shorter than a typical recording). Pass `.infinity` to always do it (fast mode), `nil` to
+    /// shorter than a typical recording). Pass `.infinity` to always do it (fast mode), or nil to
     /// skip it. Backends that allocate weights eagerly on load ignore the budget.
     func warmUp(weightMaterializationBudget: TimeInterval?) async throws
     func unload() async
@@ -42,7 +42,7 @@ struct WhisperMemoryController: ModelMemoryController {
     }
 }
 
-/// Voxtral/MLX adapter. Delegates to the service, which forces weight materialization during warmup.
+/// Voxtral/MLX adapter. The service prepares a disposable helper rather than loading MLX in-app.
 struct VoxtralMemoryController: ModelMemoryController {
     func isLoaded() async -> Bool {
         await VoxtralService.shared.isReady

@@ -2,7 +2,7 @@ import Carbon
 import SwiftUI
 
 /// A user-configurable global shortcut for toggling recording.
-struct RecordingShortcut: Codable, Equatable {
+struct RecordingShortcut: Codable, Equatable, Hashable {
     var keyCode: UInt32
     var character: String
     var usesCommand: Bool
@@ -40,6 +40,10 @@ struct RecordingShortcut: Codable, Equatable {
 
     var keyEquivalent: KeyEquivalent {
         KeyEquivalent(character.first ?? "y")
+    }
+
+    func conflicts(with other: RecordingShortcut) -> Bool {
+        keyCode == other.keyCode && carbonModifiers == other.carbonModifiers
     }
 
     var displayString: String {

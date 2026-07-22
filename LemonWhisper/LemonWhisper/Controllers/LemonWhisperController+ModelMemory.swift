@@ -1,9 +1,8 @@
 import Foundation
 
 extension LemonWhisperController {
-    /// The memory controller for whichever backend is currently selected.
-    var memoryController: ModelMemoryController {
-        switch selectedBackend {
+    func memoryController(for backend: TranscriptionBackend) -> ModelMemoryController {
+        switch backend {
         case .whisper:
             return WhisperMemoryController()
         case .voxtral:
@@ -19,29 +18,10 @@ extension LemonWhisperController {
 
         switch mode {
         case .fast:
-            // Cancel any pending unload and load the model now, fully resident.
-            cancelIdleUnloadTimer()
+            cancelAllScheduledModelUnloads()
             warmUpCurrentBackendInBackground(weightMaterializationBudget: .infinity)
         case .lazy:
-            // Start counting toward an idle unload from now.
-            scheduleIdleUnloadIfNeeded()
-        }
-    }
-
-    /// Loads the active backend's model off the main actor without blocking recording.
-    /// Idempotent: skips the work if the model is already resident. `weightMaterializationBudget`
-    /// is forwarded to the backend to decide whether to eagerly materialize weights now.
-    func warmUpCurrentBackendInBackground(weightMaterializationBudget: TimeInterval?) {
-        let controller = memoryController
-        Task.detached {
-            if await controller.isLoaded() { return }
-            do {
-                try await controller.warmUp(weightMaterializationBudget: weightMaterializationBudget)
-            } catch {
-                await MainActor.run {
-                    debugLog("⚠️ Background warmup failed: \(error.localizedDescription)")
-                }
-            }
+            unloadBackendIfUnused(selectedBackend)
         }
     }
 
@@ -50,36 +30,93 @@ extension LemonWhisperController {
         modelIdleTimeout = timeout
         AppSettingsStore.modelIdleTimeout = timeout
         debugLog("⚙️ Model idle timeout set to \(timeout.rawValue)")
-        // Re-arm the countdown with the new value when idle in lazy mode.
-        if !isRecording {
-            scheduleIdleUnloadIfNeeded()
+
+        if modelLoadingMode == .lazy {
+            cancelAllScheduledModelUnloads()
+            unloadBackendIfUnused(selectedBackend)
         }
     }
 
-    /// Restarts the idle-unload countdown. No-op unless lazy mode is active.
-    func scheduleIdleUnloadIfNeeded() {
-        cancelIdleUnloadTimer()
-        guard modelLoadingMode == .lazy else { return }
+    /// Loads the active backend's model off the main actor without blocking recording.
+    /// Transcription waits for this same task if a short recording ends before warmup does,
+    /// avoiding a second concurrent model load.
+    func warmUpCurrentBackendInBackground(weightMaterializationBudget: TimeInterval?) {
+        let backend = recordingBackend ?? selectedBackend
+        cancelScheduledModelUnload(for: backend)
+        guard modelWarmupTask == nil else { return }
 
-        idleUnloadTimer = Timer.scheduledTimer(withTimeInterval: modelIdleTimeout.seconds, repeats: false) { [weak self] _ in
-            Task { @MainActor in
-                self?.unloadCurrentBackendForIdle()
+        let controller = memoryController(for: backend)
+        let pendingUnload = modelUnloadTasks.removeValue(forKey: backend)
+        modelWarmupBackend = backend
+        modelWarmupTask = Task {
+            // If a previous use just finished, let its unload complete before loading again.
+            // This prevents an immediate new recording from racing an in-flight unload.
+            await pendingUnload?.value
+            if await controller.isLoaded() { return }
+            do {
+                try await controller.warmUp(weightMaterializationBudget: weightMaterializationBudget)
+            } catch {
+                debugLog("⚠️ Background warmup failed: \(error.localizedDescription)")
             }
         }
     }
 
-    func cancelIdleUnloadTimer() {
-        idleUnloadTimer?.invalidate()
-        idleUnloadTimer = nil
+    func waitForCurrentModelWarmup(backend: TranscriptionBackend) async {
+        guard modelWarmupBackend == backend, let task = modelWarmupTask else { return }
+        await task.value
+        modelWarmupTask = nil
+        modelWarmupBackend = nil
     }
 
-    private func unloadCurrentBackendForIdle() {
-        guard modelLoadingMode == .lazy, !isRecording else { return }
-        let controller = memoryController
-        let backend = selectedBackend
-        debugLog("💤 Idle timeout reached — unloading \(backend.rawValue) model")
-        Task.detached {
+    private func unloadBackendNow(_ backend: TranscriptionBackend) {
+        let warmupTask = modelWarmupBackend == backend ? modelWarmupTask : nil
+        if modelWarmupBackend == backend {
+            modelWarmupTask = nil
+            modelWarmupBackend = nil
+        }
+
+        let controller = memoryController(for: backend)
+        debugLog("🧹 Unloading \(backend.rawValue) model after use")
+        modelUnloadTasks[backend] = Task {
+            await warmupTask?.value
             await controller.unload()
         }
+    }
+
+    func unloadBackendIfUnused(_ backend: TranscriptionBackend) {
+        guard modelLoadingMode == .lazy,
+              recordingBackend != backend,
+              activeTranscriptionCounts[backend, default: 0] == 0 else {
+            return
+        }
+
+        cancelScheduledModelUnload(for: backend)
+        debugLog("⏳ Scheduling \(backend.rawValue) model unload in \(Int(modelIdleTimeout.seconds)) seconds")
+        modelIdleUnloadTimers[backend] = Timer.scheduledTimer(
+            withTimeInterval: modelIdleTimeout.seconds,
+            repeats: false
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.modelIdleUnloadTimers[backend] = nil
+                guard self.modelLoadingMode == .lazy,
+                      self.recordingBackend != backend,
+                      self.activeTranscriptionCounts[backend, default: 0] == 0 else {
+                    return
+                }
+                self.unloadBackendNow(backend)
+            }
+        }
+    }
+
+    func cancelScheduledModelUnload(for backend: TranscriptionBackend) {
+        modelIdleUnloadTimers.removeValue(forKey: backend)?.invalidate()
+    }
+
+    private func cancelAllScheduledModelUnloads() {
+        for timer in modelIdleUnloadTimers.values {
+            timer.invalidate()
+        }
+        modelIdleUnloadTimers.removeAll()
     }
 }

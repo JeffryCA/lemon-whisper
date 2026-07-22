@@ -377,7 +377,6 @@ extension LemonWhisperController {
         }
 
         if modelLoadingMode == .lazy {
-            // Optimistic: the model exists on disk. It loads on demand (or in parallel with recording).
             whisperStatus = "Whisper ready: \(selected.title)"
             setupState = .ready
             debugLog("🐢 Whisper ready (lazy): \(selected.id)")
@@ -429,7 +428,6 @@ extension LemonWhisperController {
         let voxtralAlreadyReady = await VoxtralService.shared.isReady
 
         if modelLoadingMode == .lazy && !voxtralAlreadyReady {
-            // Optimistic: the model exists on disk. It loads on demand (or in parallel with recording).
             selectedBackend = .voxtral
             UserDefaults.standard.set(TranscriptionBackend.voxtral.rawValue, forKey: selectedBackendDefaultsKey)
             setupState = .ready

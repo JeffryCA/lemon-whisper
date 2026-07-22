@@ -39,6 +39,11 @@ struct ContentView: View {
         .onChange(of: controller.selectedVoxtralModelID) { _, _ in syncSelectedModelKey() }
         .onChange(of: controller.downloadedWhisperModels.map(\.id)) { _, _ in syncSelectedModelKey() }
         .onChange(of: controller.downloadedVoxtralModels.map(\.id)) { _, _ in syncSelectedModelKey() }
+        .onChange(of: controller.recordingShortcuts.count) { _, _ in
+            DispatchQueue.main.async {
+                AppWindowController.shared.updateWindowSize(for: navigationState.currentRoute)
+            }
+        }
         .onChange(of: navigationState.currentRoute) { _, newRoute in
             AppWindowController.shared.updateWindowSize(for: newRoute)
         }
@@ -109,10 +114,17 @@ struct ContentView: View {
         )
     }
 
-    private var shortcutBinding: Binding<RecordingShortcut> {
+    private var shortcutBinding: Binding<[RecordingShortcut]> {
         Binding(
-            get: { controller.recordingShortcut },
-            set: { controller.updateRecordingShortcut($0) }
+            get: { controller.recordingShortcuts },
+            set: { controller.updateRecordingShortcuts($0) }
+        )
+    }
+
+    private var recordingIndicatorBinding: Binding<Bool> {
+        Binding(
+            get: { controller.recordingIndicatorEnabled },
+            set: { controller.setRecordingIndicatorEnabled($0) }
         )
     }
 
@@ -231,8 +243,15 @@ struct ContentView: View {
 
                 Divider()
 
-                HomeValueRow(title: "Shortcut") {
-                    ShortcutRecorderControl(shortcut: shortcutBinding)
+                HomeValueRow(title: "Shortcuts") {
+                    ShortcutRecorderControl(shortcuts: shortcutBinding)
+                }
+
+                Divider()
+
+                HomeValueRow(title: "Recording indicator") {
+                    Toggle("", isOn: recordingIndicatorBinding)
+                    .labelsHidden()
                 }
 
                 Divider()
@@ -358,12 +377,16 @@ private struct DetailContainer<Content: View, TrailingContent: View>: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .center, spacing: 14) {
+            HStack(alignment: .center, spacing: 0) {
                 Button {
                     onBack()
                 } label: {
                     Label("Back", systemImage: "chevron.left")
                         .foregroundStyle(.secondary)
+                        .padding(.leading, 20)
+                        .padding(.trailing, 14)
+                        .padding(.vertical, 14)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
 
@@ -381,9 +404,8 @@ private struct DetailContainer<Content: View, TrailingContent: View>: View {
 
                 trailingContent
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 14)
-            .padding(.bottom, 14)
+            .padding(.trailing, 20)
+            .padding(.vertical, 3)
             .lemonBarBackground()
 
             Divider()

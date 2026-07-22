@@ -26,37 +26,50 @@ enum HotKeyManager {
     private static let doubleTapThreshold: TimeInterval = 0.35
     private static var handlerInstalled = false
 
-    static func registerToggleRecordingHotKey(into hotKeyRef: inout EventHotKeyRef?, keyCode: UInt32, modifiers: UInt32) {
+    static func registerToggleRecordingHotKeys(
+        into hotKeyRefs: inout [EventHotKeyRef],
+        shortcuts: [RecordingShortcut]
+    ) {
         installEventHandlerOnce()
+        unregisterToggleRecordingHotKeys(&hotKeyRefs)
 
-        let toggleHotKeyID = EventHotKeyID(signature: OSType(32), id: 1)
-        debugLog("⌨️ Registering global hotkey with keyCode=\(keyCode) modifiers=\(modifiers)")
+        for (index, shortcut) in shortcuts.enumerated() {
+            let toggleHotKeyID = EventHotKeyID(signature: OSType(32), id: UInt32(index + 1))
+            var hotKeyRef: EventHotKeyRef?
+            debugLog("⌨️ Registering global hotkey with keyCode=\(shortcut.keyCode) modifiers=\(shortcut.carbonModifiers)")
 
-        let registerStatus = RegisterEventHotKey(
-            keyCode,
-            modifiers,
-            toggleHotKeyID,
-            GetEventDispatcherTarget(),
-            0,
-            &hotKeyRef
-        )
+            let registerStatus = RegisterEventHotKey(
+                shortcut.keyCode,
+                shortcut.carbonModifiers,
+                toggleHotKeyID,
+                GetEventDispatcherTarget(),
+                0,
+                &hotKeyRef
+            )
 
-        if registerStatus == noErr {
-            debugLog("✅ Registered global hotkey (keyCode: \(keyCode), modifiers: \(modifiers))")
-        } else {
-            debugLog("❌ Failed to register global hotkey (status: \(registerStatus))")
+            if registerStatus == noErr, let hotKeyRef {
+                hotKeyRefs.append(hotKeyRef)
+                debugLog("✅ Registered global hotkey \(shortcut.displayString)")
+            } else {
+                debugLog("❌ Failed to register global hotkey \(shortcut.displayString) (status: \(registerStatus))")
+            }
         }
 
         installCancelRecordingMonitorIfNeeded()
     }
 
-    /// Swaps the currently registered hotkey for a new keyCode/modifiers combination.
-    static func updateToggleRecordingHotKey(into hotKeyRef: inout EventHotKeyRef?, keyCode: UInt32, modifiers: UInt32) {
-        if let existingRef = hotKeyRef {
+    static func updateToggleRecordingHotKeys(
+        into hotKeyRefs: inout [EventHotKeyRef],
+        shortcuts: [RecordingShortcut]
+    ) {
+        registerToggleRecordingHotKeys(into: &hotKeyRefs, shortcuts: shortcuts)
+    }
+
+    private static func unregisterToggleRecordingHotKeys(_ hotKeyRefs: inout [EventHotKeyRef]) {
+        for existingRef in hotKeyRefs {
             UnregisterEventHotKey(existingRef)
-            hotKeyRef = nil
         }
-        registerToggleRecordingHotKey(into: &hotKeyRef, keyCode: keyCode, modifiers: modifiers)
+        hotKeyRefs.removeAll()
     }
 
     private static func installEventHandlerOnce() {
