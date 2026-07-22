@@ -122,8 +122,10 @@ private final class VoxtralWorkerSession: @unchecked Sendable {
     }
 }
 
-/// Owns the single disposable Voxtral process. Actor isolation serializes preparation and
-/// inference while still allowing cancellation to terminate a worker during an awaited response.
+/// Owns the single Voxtral process. Actor isolation serializes preparation and inference while
+/// still allowing cancellation to terminate a worker during an awaited response. Successful
+/// transcriptions leave the prepared worker running so the app's model-memory policy can decide
+/// whether to retain it (fast mode) or terminate it after the lazy idle timeout.
 actor VoxtralWorkerCoordinator {
     private var session: VoxtralWorkerSession?
     private var operationInProgress = false
@@ -202,7 +204,7 @@ actor VoxtralWorkerCoordinator {
                     timeout: transcriptionTimeout, operation: "transcribing"
                 )
                 switch event {
-                case .result(let result): terminateCurrentWorker(); return result.text
+                case .result(let result): return result.text
                 case .cancelled: terminateCurrentWorker(); throw VoxtralWorkerCoordinatorError.cancelled
                 case .failure(let failure): throw VoxtralWorkerCoordinatorError.workerFailure(failure.error)
                 default: throw VoxtralWorkerCoordinatorError.invalidResponse

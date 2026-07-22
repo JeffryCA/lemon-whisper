@@ -116,10 +116,10 @@ final class VoxtralWorkerCoordinatorTests: XCTestCase {
         await coordinator.shutdown()
     }
 
-    func testResultIsReturnedAndDisposableWorkerExits() async throws {
+    func testSuccessfulWorkerIsReusedUntilShutdown() async throws {
         let counter = temporaryURL("result-count")
         let pidFile = temporaryURL("result-pid")
-        let script = try makeScript(successScript(counter: counter, pidFile: pidFile, includeResult: true))
+        let script = try makeScript(reusableSuccessScript(counter: counter, pidFile: pidFile))
         let audio = temporaryURL("audio.wav")
         try Data([0]).write(to: audio)
         defer { remove([script, counter, pidFile, audio]) }
@@ -127,13 +127,48 @@ final class VoxtralWorkerCoordinatorTests: XCTestCase {
             helperURL: script, handshakeTimeout: 1, preparationTimeout: 1, transcriptionTimeout: 1
         )
 
-        let text = try await coordinator.transcribe(
+        let first = try await coordinator.transcribe(
             audioURL: audio, modelID: "mini-3b-4bit", language: nil
         )
         let pid = try Int32(String(contentsOf: pidFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines))!
-        XCTAssertEqual(text, "hello from worker")
+        XCTAssertEqual(first, "hello from worker")
+        XCTAssertEqual(kill(pid, 0), 0, "Worker should remain alive during the idle window")
+
+        let second = try await coordinator.transcribe(
+            audioURL: audio, modelID: "mini-3b-4bit", language: "en"
+        )
+        XCTAssertEqual(second, "hello from worker")
+        XCTAssertEqual(
+            try String(contentsOf: counter, encoding: .utf8)
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            "1",
+            "Consecutive transcriptions should reuse the prepared worker"
+        )
+
+        await coordinator.shutdown()
         let didExit = await waitUntilProcessExits(pid)
         XCTAssertTrue(didExit)
+    }
+
+    private func reusableSuccessScript(counter: URL, pidFile: URL) -> String {
+        """
+        count=$(/bin/cat '\(counter.path)' 2>/dev/null || printf 0)
+        /bin/echo $((count + 1)) > '\(counter.path)'
+        /bin/echo $$ > '\(pidFile.path)'
+        printf '%s\\n' '{"type":"hello","payload":{"protocolVersion":1,"workerPID":106}}'
+        IFS= read -r prepare
+        prepare_id=$(printf '%s' "$prepare" | /usr/bin/sed -E 's/.*"id":"([^"]+)".*/\\1/')
+        printf '%s\\n' "{\\"type\\":\\"prepared\\",\\"payload\\":{\\"requestID\\":\\"$prepare_id\\",\\"modelID\\":\\"mini-3b-4bit\\"}}"
+        while IFS= read -r command; do
+            case "$command" in
+                *'"type":"transcribe"'*)
+                    request_id=$(printf '%s' "$command" | /usr/bin/sed -E 's/.*"id":"([^"]+)".*/\\1/')
+                    printf '%s\\n' "{\\"type\\":\\"result\\",\\"payload\\":{\\"requestID\\":\\"$request_id\\",\\"text\\":\\"hello from worker\\"}}"
+                    ;;
+                *'"type":"shutdown"'*) exit 0 ;;
+            esac
+        done
+        """
     }
 
     private func successScript(counter: URL, pidFile: URL? = nil, includeResult: Bool) -> String {

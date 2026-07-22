@@ -103,6 +103,7 @@ actor VoxtralService {
                 modelID: selectedModelID,
                 language: normalizedLanguage
             )
+            workerIsPrepared = await worker.isPrepared
             lastErrorMessage = nil
             if AppSettingsStore.modelLoadingMode == .fast {
                 let modelID = selectedModelID
@@ -115,7 +116,7 @@ actor VoxtralService {
         }
     }
 
-    /// Starts a disposable process and fully prepares its model. Model loading and materialization
+    /// Starts an idle-scoped process and fully prepares its model. Model loading and materialization
     /// happen entirely in the helper and overlap the active recording.
     func warmupModel(weightMaterializationBudget: TimeInterval? = nil) async throws {
         do {

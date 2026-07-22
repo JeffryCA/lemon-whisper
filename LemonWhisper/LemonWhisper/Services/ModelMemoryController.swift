@@ -42,7 +42,7 @@ struct WhisperMemoryController: ModelMemoryController {
     }
 }
 
-/// Voxtral/MLX adapter. The service prepares a disposable helper rather than loading MLX in-app.
+/// Voxtral/MLX adapter. The service prepares an idle-scoped helper rather than loading MLX in-app.
 struct VoxtralMemoryController: ModelMemoryController {
     func isLoaded() async -> Bool {
         await VoxtralService.shared.isReady

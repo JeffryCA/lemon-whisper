@@ -61,7 +61,8 @@ can make a single endpoint delta misleading.
 ## Comparing the worker boundary
 
 This executable deliberately performs every cycle in one process. For the
-production acceptance check, run each transcription in the disposable worker,
-record the main-app PID separately, verify that each worker PID exits, and compare
-the main process's settled footprint against its initial baseline. The main
-process should remain within roughly 20 MiB with no meaningful upward slope.
+production acceptance check, run transcription in an idle-scoped disposable
+worker, record the main-app PID separately, verify that the PID remains alive
+after a successful result and exits after the idle owner sends `shutdown`, and
+compare the main process's settled footprint against its initial baseline. The
+main process should remain within roughly 20 MiB with no meaningful upward slope.

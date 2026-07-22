@@ -1,6 +1,6 @@
 import Foundation
 
-/// The wire protocol spoken between LemonWhisper and its disposable Voxtral worker.
+/// The wire protocol spoken between LemonWhisper and its idle-scoped Voxtral worker.
 enum VoxtralWorkerProtocol {
     static let currentVersion = 1
 }

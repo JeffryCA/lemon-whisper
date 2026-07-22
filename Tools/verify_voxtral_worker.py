@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise the bundled disposable Voxtral worker and check PID/RSS invariants."""
+"""Exercise the bundled idle-scoped Voxtral worker and check PID/RSS invariants."""
 
 import argparse
 import json
@@ -91,6 +91,10 @@ def run_cycle(args: argparse.Namespace, cycle: int) -> tuple[int, str]:
         if result["payload"]["requestID"].lower() != request_id.lower():
             raise RuntimeError("result correlation mismatch")
         text = result["payload"]["text"].strip()
+        if process.poll() is not None or pid_is_gone(worker_pid):
+            raise RuntimeError(f"worker PID {worker_pid} exited before the idle owner shut it down")
+
+        send(process, {"type": "shutdown"})
         status = process.wait(timeout=args.timeout)
         if status != 0:
             raise RuntimeError(f"worker exited with {status}")
@@ -99,7 +103,7 @@ def run_cycle(args: argparse.Namespace, cycle: int) -> tuple[int, str]:
                 break
             time.sleep(0.01)
         if not pid_is_gone(worker_pid):
-            raise RuntimeError(f"worker PID {worker_pid} survived cycle {cycle}")
+            raise RuntimeError(f"worker PID {worker_pid} survived shutdown in cycle {cycle}")
         return worker_pid, text
     finally:
         if process.poll() is None:
@@ -149,7 +153,8 @@ def main() -> int:
             record = {
                 "cycle": cycle,
                 "worker_pid": worker_pid,
-                "worker_exited": True,
+                "worker_alive_after_result": True,
+                "worker_exited_after_shutdown": True,
                 "parent_rss_bytes": current_rss,
                 "text": text,
             }

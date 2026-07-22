@@ -62,6 +62,9 @@ private actor VoxtralWorkerEngine {
             try Task.checkCancellation()
             try await materializeWeights(prepared)
             try Task.checkCancellation()
+            // Publishing completion means the worker is ready for the next command. Clear the
+            // operation first so an immediate transcription cannot observe a stale busy state.
+            operation = nil
             writer.send(.prepared(VoxtralWorkerPrepared(requestID: request.id, modelID: request.modelID)))
         } catch is CancellationError {
             writer.send(.cancelled(VoxtralWorkerCancelled(requestID: request.id)))
@@ -87,9 +90,8 @@ private actor VoxtralWorkerEngine {
                 audio: URL(fileURLWithPath: request.audioPath), language: request.language
             )
             try Task.checkCancellation()
+            operation = nil
             writer.send(.result(VoxtralWorkerResult(requestID: request.id, text: text)))
-            pipeline.unload()
-            Darwin.exit(0)
         } catch is CancellationError {
             writer.send(.cancelled(VoxtralWorkerCancelled(requestID: request.id)))
             pipeline.unload()
