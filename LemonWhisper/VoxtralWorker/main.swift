@@ -100,7 +100,7 @@ private actor VoxtralWorkerEngine {
         }
         do {
             let text = try await transcribeFile(
-                URL(fileURLWithPath: request.audioPath), language: request.language
+                URL(fileURLWithPath: request.audioPath), request: request
             )
             try Task.checkCancellation()
             operation = nil
@@ -116,11 +116,11 @@ private actor VoxtralWorkerEngine {
         }
     }
 
-    private func transcribeFile(_ url: URL, language: String?) async throws -> String {
+    private func transcribeFile(_ url: URL, request: VoxtralWorkerTranscriptionRequest) async throws -> String {
         let file = try AVAudioFile(forReading: url)
         let maxFrames = AVAudioFrameCount(file.processingFormat.sampleRate * TranscriptionAudioPolicy.maximumChunkSeconds)
         guard file.length > AVAudioFramePosition(maxFrames) else {
-            return try await transcribeChunk(url, language: language)
+            return try await transcribeChunk(url, request: request)
         }
         var texts: [String] = []
         while file.framePosition < file.length {
@@ -148,17 +148,43 @@ private actor VoxtralWorkerEngine {
                 let output = try AVAudioFile(forWriting: chunkURL, settings: buffer.format.settings)
                 try output.write(from: buffer)
             }
-            texts.append(try await transcribeChunk(chunkURL, language: language))
+            texts.append(try await transcribeChunk(chunkURL, request: request))
         }
         return texts.filter { !$0.isEmpty }.joined(separator: " ")
     }
 
-    private func transcribeChunk(_ url: URL, language: String?) async throws -> String {
+    private func transcribeChunk(_ url: URL, request: VoxtralWorkerTranscriptionRequest) async throws -> String {
         if let qwenModel {
             let (_, audio) = try loadAudioArray(from: url, sampleRate: 16_000)
+            if request.preview == true {
+                var partial = ""
+                let clock = ContinuousClock()
+                var nextUpdate = clock.now
+                for try await event in qwenModel.generateStream(
+                    audio: audio, maxTokens: 192, temperature: 0, context: request.context ?? "",
+                    language: request.language, chunkDuration: 60
+                ) {
+                    try Task.checkCancellation()
+                    switch event {
+                    case .token(let token):
+                        partial += token
+                        if clock.now >= nextUpdate {
+                            writer.send(.partial(VoxtralWorkerPartial(requestID: request.id, text: partial)))
+                            nextUpdate = clock.now + .milliseconds(90)
+                        }
+                    case .result(let output):
+                        return output.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    default:
+                        break
+                    }
+                }
+                try Task.checkCancellation()
+                throw QwenServiceWorkerError.missingPreviewResult
+            }
+
             let output = qwenModel.generate(
                 audio: audio, maxTokens: TranscriptionAudioPolicy.maximumOutputTokens,
-                temperature: 0, language: language, chunkDuration: 60
+                temperature: 0, context: request.context ?? "", language: request.language, chunkDuration: 60
             )
             // Our external chunks never exceed 60 seconds, so this is a per-request check.
             guard output.generationTokens < TranscriptionAudioPolicy.maximumOutputTokens else {
@@ -167,7 +193,7 @@ private actor VoxtralWorkerEngine {
             return output.text.trimmingCharacters(in: .whitespacesAndNewlines)
         }
         guard let pipeline else { throw QwenServiceWorkerError.modelMissing }
-        return try await pipeline.transcribe(audio: url, language: language)
+        return try await pipeline.transcribe(audio: url, language: request.language)
     }
 
     private func loadPipeline(modelID: String) async throws -> VoxtralPipeline {
@@ -236,9 +262,10 @@ private actor VoxtralWorkerEngine {
 }
 
 private enum QwenServiceWorkerError: LocalizedError {
-    case modelMissing, audioAllocationFailed, outputLimitReached
+    case modelMissing, audioAllocationFailed, outputLimitReached, missingPreviewResult
     var errorDescription: String? {
         switch self {
+        case .missingPreviewResult: return "Qwen3-ASR did not return a live preview."
         case .modelMissing: return "The requested local model is not downloaded."
         case .audioAllocationFailed: return "Could not read the audio chunk."
         case .outputLimitReached: return "The transcription reached its output limit. Try a shorter recording."

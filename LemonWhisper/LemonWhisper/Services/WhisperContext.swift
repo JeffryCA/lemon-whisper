@@ -7,9 +7,7 @@ import Foundation
 actor WhisperContext {
     static var shared: WhisperContext?
     private var context: OpaquePointer?
-    private var languageCString: [CChar]?
     private var prompt: String?
-    private var promptCString: [CChar]?
     private var vadModelPath: String?
 
     private init() {}
@@ -39,19 +37,6 @@ actor WhisperContext {
         )
         
 
-        languageCString = Array(language.utf8CString)
-        params.language = languageCString!.withUnsafeBufferPointer { $0.baseAddress }
-
-        if let prompt {
-            promptCString = Array(prompt.utf8CString)
-            params.initial_prompt = promptCString?.withUnsafeBufferPointer { ptr in
-                ptr.baseAddress
-            }
-        } else {
-            promptCString = nil
-            params.initial_prompt = nil
-        }
-        
         params.print_realtime = true
         params.print_progress = false
         params.print_timestamps = false
@@ -79,9 +64,8 @@ actor WhisperContext {
         whisper_reset_timings(context)
         
         // Configure VAD if enabled by user and model is available
-        if useVAD, let vadModelPath = self.vadModelPath {
+        if useVAD, vadModelPath != nil {
             params.vad = true
-            params.vad_model_path = (vadModelPath as NSString).utf8String
             
             var vadParams = whisper_vad_default_params()
             vadParams.threshold = 0.6
@@ -95,18 +79,28 @@ actor WhisperContext {
             params.vad = false
         }
         
-        var success = true
-        samples.withUnsafeBufferPointer { samplesBuffer in
-            if whisper_full(context, params, samplesBuffer.baseAddress, Int32(samplesBuffer.count)) != 0 {
-                print("Failed to run whisper_full. VAD enabled: \(params.vad)")
-                success = false
+        var success = false
+        language.withCString { languagePointer in
+            (prompt ?? "").withCString { promptPointer in
+                (vadModelPath ?? "").withCString { vadPointer in
+                    params.language = languagePointer
+                    params.initial_prompt = prompt == nil ? nil : promptPointer
+                    params.vad_model_path = params.vad ? vadPointer : nil
+                    success = samples.withUnsafeBufferPointer { buffer in
+                        whisper_full(context, params, buffer.baseAddress, Int32(buffer.count)) == 0
+                    }
+                }
             }
         }
-        
-        languageCString = nil
-        promptCString = nil
-        
+        if !success { print("Failed to run whisper_full. VAD enabled: \(params.vad)") }
         return success
+    }
+
+    func transcribeRecording(samples: [Float], language: String, prompt: String?, useVAD: Bool) -> String {
+        guard fullTranscribe(samples: samples, language: language, prompt: prompt, useVAD: useVAD) else {
+            return "Transcription failed."
+        }
+        return getTranscription()
     }
 
     func getTranscription() -> String {
@@ -156,7 +150,6 @@ actor WhisperContext {
             whisper_free(context)
             self.context = nil
         }
-        languageCString = nil
     }
 
     func setPrompt(_ prompt: String?) {

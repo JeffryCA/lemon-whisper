@@ -11,6 +11,9 @@ enum TranscriptionBackend: String, CaseIterable, Identifiable, Hashable {
 
     var id: String { rawValue }
 
+    var supportsVocabularyHints: Bool { self == .whisper || self == .qwen }
+    var supportsLivePreview: Bool { self == .qwen }
+
     var title: String {
         switch self {
         case .whisper:
@@ -26,6 +29,11 @@ enum TranscriptionBackend: String, CaseIterable, Identifiable, Hashable {
 class TranscriptionManager {
     static let shared = TranscriptionManager()
     private let textInsertionService = TextInsertionService()
+
+    @MainActor
+    func beginLiveDictation(processID: pid_t?) -> LiveDictationInsertion? {
+        textInsertionService.beginLiveDictation(processID: processID)
+    }
 
     func transcribe(
         buffer: AVAudioPCMBuffer,
@@ -65,7 +73,7 @@ class TranscriptionManager {
                     let result = ok ? await ctx.getTranscription().trimmingCharacters(in: .whitespacesAndNewlines) : "Transcription failed."
                     completion(result)
                 case .qwen:
-                    let text = try await QwenService.shared.transcribe(audioURL: tempURL, language: language)
+                    let text = try await QwenService.shared.transcribe(audioURL: tempURL, language: language, context: prompt)
                     completion(text.trimmingCharacters(in: .whitespacesAndNewlines))
                 case .voxtral:
                     let text = try await VoxtralService.shared.transcribe(audioURL: tempURL, language: language)
@@ -86,6 +94,10 @@ class TranscriptionManager {
         targetProcessID: pid_t?,
         recordingStartedAt: Date? = nil,
         recordingStoppedAt: Date? = nil,
+        dictionary: TranscriptionDictionary = .init(),
+        context: String? = nil,
+        liveInsertion: LiveDictationInsertion? = nil,
+        audioStartFrame: Int = 0,
         onActivityChanged: ((Bool) -> Void)? = nil
     ) {
         Task {
@@ -117,32 +129,40 @@ class TranscriptionManager {
 
                     let ctx = try await ensureWhisperContextLoaded()
 
-                    let ok = await ctx.fullTranscribe(
+                    result = await ctx.transcribeRecording(
                         samples: samples,
                         language: language,
-                        prompt: nil,
-                        isLiveMode: false,
+                        prompt: context,
                         // The VAD requires 250 ms of detected speech. For sub-second clips,
                         // bypass it so a quick word is not discarded before transcription.
                         useVAD: duration >= 1
                     )
-                    result = ok ? await ctx.getTranscription().trimmingCharacters(in: .whitespacesAndNewlines) : "Transcription failed."
                 case .qwen:
-                    result = try await QwenService.shared.transcribe(audioURL: url, language: language)
+                    if audioStartFrame > 0 {
+                        guard let tail = try FileManager.default.copyWavTail(url, from: audioStartFrame) else { return }
+                        defer { try? FileManager.default.removeItem(at: tail) }
+                        result = try await QwenService.shared.transcribe(audioURL: tail, language: language, context: context)
+                    } else {
+                        result = try await QwenService.shared.transcribe(audioURL: url, language: language, context: context)
+                    }
                 case .voxtral:
                     result = try await VoxtralService.shared.transcribe(audioURL: url, language: language)
                 }
 
                 let sanitized = result.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !sanitized.isEmpty else {
+                    await liveInsertion?.discardLive()
                     debugLog("⚠️ Transcription produced no text (backend: \(backend.rawValue), file: \(url.lastPathComponent))")
                     return
                 }
 
                 let savedRecord: TranscriptionRecord?
+                let pasteText: String
                 if sanitized != "Transcription failed." {
+                    pasteText = dictionary.applyingCorrections(to: sanitized)
                     savedRecord = await TranscriptionHistoryStore.shared.record(
                         rawText: sanitized,
+                        correctedText: pasteText == sanitized ? nil : pasteText,
                         language: language,
                         backend: backend,
                         targetBundleIdentifier: targetBundleIdentifier,
@@ -150,14 +170,30 @@ class TranscriptionManager {
                         recordingStoppedAt: recordingStoppedAt
                     )
                 } else {
+                    await liveInsertion?.discardLive()
+                    if liveInsertion != nil { return }
                     savedRecord = nil
+                    pasteText = sanitized
                 }
 
+                let expandedText = PrivateDictationSnippets.expanding(in: pasteText)
                 let insertionResult = await copyAndPaste(
-                    sanitized,
+                    expandedText,
                     targetBundleIdentifier: targetBundleIdentifier,
-                    targetProcessID: targetProcessID
+                    targetProcessID: targetProcessID,
+                    liveInsertion: liveInsertion
                 )
+
+                if sanitized != "Transcription failed." {
+                    logTranscriptionProcessing(
+                        id: savedRecord?.id,
+                        backend: backend.rawValue,
+                        original: result,
+                        dictionaryCorrected: pasteText,
+                        processed: expandedText.trimmingCharacters(in: .whitespacesAndNewlines),
+                        pasteSucceeded: insertionResult.succeeded
+                    )
+                }
 
                 if let savedRecord {
                     await TranscriptionHistoryStore.shared.updatePasteMetadata(
@@ -169,23 +205,30 @@ class TranscriptionManager {
                 }
 
             } catch {
+                await liveInsertion?.discardLive()
                 debugLog("❌ Error during transcription (backend: \(backend.rawValue), file: \(url.lastPathComponent)): \(error)")
             }
         }
     }
 
+    @MainActor
     func copyAndPaste(
         _ text: String,
         targetBundleIdentifier: String?,
-        targetProcessID: pid_t?
+        targetProcessID: pid_t?,
+        liveInsertion: LiveDictationInsertion? = nil
     ) async -> TextInsertionResult {
         let sanitized = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !sanitized.isEmpty else {
             return TextInsertionResult(path: nil, errorMessage: "Cannot paste empty text.")
         }
 
-        let insertionResult = await MainActor.run {
-            textInsertionService.insertText(
+        let insertionResult: TextInsertionResult
+        if let result = await liveInsertion?.finishLive(sanitized) {
+            TextInsertionService.copyTextToPasteboard(sanitized)
+            insertionResult = result
+        } else {
+            insertionResult = textInsertionService.insertText(
                 sanitized,
                 targetBundleIdentifier: targetBundleIdentifier,
                 targetProcessID: targetProcessID
@@ -193,12 +236,12 @@ class TranscriptionManager {
         }
 
         if !insertionResult.succeeded {
-            print("❌ \(insertionResult.errorMessage ?? "All paste paths failed")")
+            debugLog("❌ \(insertionResult.errorMessage ?? "All paste paths failed")")
             return insertionResult
         }
 
         if let path = insertionResult.path {
-            print("✅ Paste path: \(path.logLabel)")
+            debugLog("✅ Paste path: \(path.logLabel)")
         }
         return insertionResult
     }

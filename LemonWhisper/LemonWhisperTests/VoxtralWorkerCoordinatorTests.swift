@@ -150,6 +150,34 @@ final class VoxtralWorkerCoordinatorTests: XCTestCase {
         XCTAssertTrue(didExit)
     }
 
+    func testPreviewDeliversPartialTextBeforeReturningTheFinalResult() async throws {
+        let counter = temporaryURL("preview-count")
+        let pidFile = temporaryURL("preview-pid")
+        let script = try makeScript(reusableSuccessScript(counter: counter, pidFile: pidFile))
+        let audio = temporaryURL("audio.wav")
+        try Data([0]).write(to: audio)
+        defer { remove([script, counter, pidFile, audio]) }
+        let coordinator = VoxtralWorkerCoordinator(
+            helperURL: script, handshakeTimeout: 1, preparationTimeout: 1, transcriptionTimeout: 1
+        )
+
+        actor Previews {
+            var texts: [String] = []
+            func append(_ text: String) { texts.append(text) }
+        }
+        let previews = Previews()
+        try await coordinator.prepare(modelID: "mini-3b-4bit")
+        let final = try await coordinator.transcribe(
+            audioURL: audio, modelID: "mini-3b-4bit", language: "en", context: "Vocabulary: Greptile"
+        ) { text in
+            await previews.append(text)
+        }
+        let received = await previews.texts
+        XCTAssertEqual(received, ["hello", "hello from"])
+        XCTAssertEqual(final, "hello from worker")
+        await coordinator.shutdown()
+    }
+
     private func reusableSuccessScript(counter: URL, pidFile: URL) -> String {
         """
         count=$(/bin/cat '\(counter.path)' 2>/dev/null || printf 0)
@@ -163,6 +191,18 @@ final class VoxtralWorkerCoordinatorTests: XCTestCase {
             case "$command" in
                 *'"type":"transcribe"'*)
                     request_id=$(printf '%s' "$command" | /usr/bin/sed -E 's/.*"id":"([^"]+)".*/\\1/')
+                    case "$command" in
+                        *'"preview":true'*)
+                            case "$command" in
+                                *'"context":"Vocabulary: Greptile"'*) ;;
+                                *) exit 7 ;;
+                            esac
+                            printf '%s' "{\\"type\\":\\"partial\\","
+                            /bin/sleep 0.02
+                            printf '%s\\n' "\\"payload\\":{\\"requestID\\":\\"$request_id\\",\\"text\\":\\"hello\\"}}"
+                            printf '%s\\n' "{\\"type\\":\\"partial\\",\\"payload\\":{\\"requestID\\":\\"$request_id\\",\\"text\\":\\"hello from\\"}}"
+                            ;;
+                    esac
                     printf '%s\\n' "{\\"type\\":\\"result\\",\\"payload\\":{\\"requestID\\":\\"$request_id\\",\\"text\\":\\"hello from worker\\"}}"
                     ;;
                 *'"type":"shutdown"'*) exit 0 ;;

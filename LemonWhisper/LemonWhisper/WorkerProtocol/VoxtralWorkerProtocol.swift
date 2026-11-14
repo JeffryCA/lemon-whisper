@@ -72,12 +72,19 @@ struct VoxtralWorkerTranscriptionRequest: Codable, Equatable, Sendable {
     let audioPath: String
     let modelID: String
     let language: String?
+    let context: String?
+    let preview: Bool?
 
-    init(id: UUID = UUID(), audioPath: String, modelID: String, language: String?) {
+    init(
+        id: UUID = UUID(), audioPath: String, modelID: String, language: String?,
+        context: String? = nil, preview: Bool? = nil
+    ) {
         self.id = id
         self.audioPath = audioPath
         self.modelID = modelID
         self.language = language
+        self.context = context
+        self.preview = preview
     }
 }
 
@@ -93,12 +100,13 @@ struct VoxtralWorkerCancellationRequest: Codable, Equatable, Sendable {
 enum VoxtralWorkerEvent: Codable, Equatable, Sendable {
     case hello(VoxtralWorkerHello)
     case prepared(VoxtralWorkerPrepared)
+    case partial(VoxtralWorkerPartial)
     case result(VoxtralWorkerResult)
     case cancelled(VoxtralWorkerCancelled)
     case failure(VoxtralWorkerFailure)
 
     private enum CodingKeys: String, CodingKey { case type, payload }
-    private enum MessageType: String, Codable { case hello, prepared, result, cancelled, failure }
+    private enum MessageType: String, Codable { case hello, prepared, partial, result, cancelled, failure }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -107,6 +115,8 @@ enum VoxtralWorkerEvent: Codable, Equatable, Sendable {
             self = .hello(try container.decode(VoxtralWorkerHello.self, forKey: .payload))
         case .prepared:
             self = .prepared(try container.decode(VoxtralWorkerPrepared.self, forKey: .payload))
+        case .partial:
+            self = .partial(try container.decode(VoxtralWorkerPartial.self, forKey: .payload))
         case .result:
             self = .result(try container.decode(VoxtralWorkerResult.self, forKey: .payload))
         case .cancelled:
@@ -125,6 +135,9 @@ enum VoxtralWorkerEvent: Codable, Equatable, Sendable {
         case .prepared(let prepared):
             try container.encode(MessageType.prepared, forKey: .type)
             try container.encode(prepared, forKey: .payload)
+        case .partial(let partial):
+            try container.encode(MessageType.partial, forKey: .type)
+            try container.encode(partial, forKey: .payload)
         case .result(let result):
             try container.encode(MessageType.result, forKey: .type)
             try container.encode(result, forKey: .payload)
@@ -142,6 +155,7 @@ enum VoxtralWorkerEvent: Codable, Equatable, Sendable {
         switch self {
         case .hello: nil
         case .prepared(let prepared): prepared.requestID
+        case .partial(let partial): partial.requestID
         case .result(let result): result.requestID
         case .cancelled(let cancelled): cancelled.requestID
         case .failure(let failure): failure.requestID
@@ -162,6 +176,11 @@ struct VoxtralWorkerHello: Codable, Equatable, Sendable {
 struct VoxtralWorkerPrepared: Codable, Equatable, Sendable {
     let requestID: UUID
     let modelID: String
+}
+
+struct VoxtralWorkerPartial: Codable, Equatable, Sendable {
+    let requestID: UUID
+    let text: String
 }
 
 struct VoxtralWorkerResult: Codable, Equatable, Sendable {

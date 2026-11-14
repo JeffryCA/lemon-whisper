@@ -25,6 +25,7 @@ struct TranscriptionHistoryDatabaseTests {
 
         let second = try await database.insert(
             rawText: "second transcription",
+            correctedText: "Second transcription.",
             language: "es",
             backend: "voxtral",
             targetBundleIdentifier: nil
@@ -35,6 +36,8 @@ struct TranscriptionHistoryDatabaseTests {
         #expect(records.count == 2)
         #expect(records[0].id == second.id)
         #expect(records[0].rawText == "second transcription")
+        #expect(records[0].displayText == "Second transcription.")
+        #expect(records[1].correctedText == nil)
         #expect(records[0].language == "es")
         #expect(records[0].pasteStatus == "pending")
         #expect(records[1].id == first.id)

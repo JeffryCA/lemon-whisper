@@ -12,38 +12,16 @@ struct ShortcutRecorderControl: View {
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 4) {
-            ForEach(Array(shortcuts.enumerated()), id: \.offset) { index, shortcut in
-                HStack(spacing: 6) {
-                    Button(capturingIndex == index ? "Press a key combo…" : shortcut.displayString) {
-                        beginCapture(at: index)
-                    }
-                    .buttonStyle(NeutralActionButtonStyle())
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    shortcutButtons
+                }
+                .fixedSize(horizontal: true, vertical: false)
 
-                    if shortcuts.count > 1 {
-                        Button {
-                            removeShortcut(at: index)
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.caption.weight(.semibold))
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.secondary)
-                        .help("Remove shortcut")
-                    }
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 8, alignment: .trailing)], spacing: 6) {
+                    shortcutButtons
                 }
             }
-
-            Button {
-                beginCapture(at: shortcuts.count)
-            } label: {
-                Label(
-                    capturingIndex == shortcuts.count ? "Press a key combo…" : "Add shortcut",
-                    systemImage: "plus"
-                )
-            }
-            .buttonStyle(.plain)
-            .font(.caption)
-            .foregroundStyle(.secondary)
 
             if let validationMessage {
                 Text(validationMessage)
@@ -54,6 +32,48 @@ struct ShortcutRecorderControl: View {
             }
         }
         .onDisappear { endCapture() }
+    }
+
+    @ViewBuilder
+    private var shortcutButtons: some View {
+        ForEach(Array(shortcuts.enumerated()), id: \.offset) { index, shortcut in
+            HStack(spacing: 5) {
+                Button(capturingIndex == index ? "Press a key combo…" : shortcut.displayString) {
+                    beginCapture(at: index)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+                .fixedSize()
+
+                if shortcuts.count > 1 {
+                    Button {
+                        removeShortcut(at: index)
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.caption2.weight(.semibold))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Remove \(shortcut.displayString)")
+                    .help("Remove shortcut")
+                }
+            }
+        }
+
+        Button {
+            beginCapture(at: shortcuts.count)
+        } label: {
+            if capturingIndex == shortcuts.count {
+                Text("Press a key combo…")
+            } else {
+                Image(systemName: "plus")
+            }
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.regular)
+        .fixedSize()
+        .accessibilityLabel(capturingIndex == shortcuts.count ? "Press a key combination" : "Add shortcut")
+        .help("Add shortcut")
     }
 
     private func beginCapture(at index: Int) {
@@ -108,7 +128,7 @@ struct ShortcutRecorderControl: View {
 
     private func removeShortcut(at index: Int) {
         guard shortcuts.indices.contains(index), shortcuts.count > 1 else { return }
-        if capturingIndex == index {
+        if capturingIndex != nil {
             endCapture()
         }
         shortcuts.remove(at: index)

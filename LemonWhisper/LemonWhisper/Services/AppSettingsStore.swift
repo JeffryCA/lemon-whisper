@@ -10,6 +10,18 @@ enum AppSettingsStore {
     private static let modelLoadingModeKey = "modelLoadingMode"
     private static let modelIdleTimeoutKey = "modelIdleTimeout"
 
+    static let vocabularyHintsEnabledKey = "vocabularyHintsEnabled"
+
+    static var vocabularyHintsEnabled: Bool { defaults.bool(forKey: vocabularyHintsEnabledKey) }
+
+    static let transcriptionContextKey = "transcriptionContext"
+
+    static var transcriptionContext: String { defaults.string(forKey: transcriptionContextKey) ?? "" }
+
+    static let livePreviewEnabledKey = "livePreviewEnabled"
+
+    static var livePreviewEnabled: Bool { defaults.bool(forKey: livePreviewEnabledKey) }
+
     static var modelLoadingMode: ModelLoadingMode {
         get {
             guard let raw = defaults.string(forKey: modelLoadingModeKey),

@@ -3,6 +3,7 @@ import SwiftUI
 enum AppRoute: Hashable {
     case manageModels
     case transcriptions
+    case dictationSettings
 }
 
 @MainActor

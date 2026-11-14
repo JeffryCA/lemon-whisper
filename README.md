@@ -11,7 +11,7 @@ It lets you record from anywhere, transcribe speech on-device with local models,
 - Runs as a menu bar app instead of a full dock app.
 - Start/Stop recording audio with `Ctrl+Y`.
 - Cancel an in-progress recording with a double-tap of `Control`.
-- Transcribes locally with Whisper, Voxtral, or experimental Qwen3-ASR.
+- Transcribes locally with Whisper, Voxtral, or Qwen3-ASR.
 - Downloads and manages models inside the app (Voxtral Mini 3B 4-bit recommended).
 - Switches between downloaded models without external scripts.
 - Shows lightweight recording and transcription HUDs near the cursor.
@@ -54,7 +54,7 @@ Xcode will resolve Swift Package Manager dependencies automatically. Then run th
 
 ## Trying Qwen3-ASR
 
-On Apple Silicon, open **Manage Local Models** and download **Qwen3-ASR 1.7B (4-bit, experimental)**.
+On Apple Silicon, open **Manage Local Models** and download **Qwen3-ASR 1.7B (4-bit)**.
 Then select it in the model picker or the menu bar's **Model** menu. Downloading it leaves your
 current model selected. Language selection, history, paste, and model idle unloading work with Qwen.
 The model runs locally through the same disposable helper architecture as Voxtral; no Python or
@@ -64,6 +64,41 @@ For Voxtral and Qwen, recordings longer than 60 seconds are processed in bounded
 quiet boundaries. Each chunk has a 4,096-token output allowance instead of the previous 500-token
 allowance for an entire Voxtral recording. Continuous speech at a chunk boundary can still affect
 recognition; this does not establish error-free long-form transcription.
+
+## Dictation Settings
+
+Open **Dictation settings** from the main window to manage your dictionary. Add a preferred
+term for recognition hints or pair it with a mishearing to replace that phrase before paste.
+History keeps the raw text alongside any correction.
+
+**Vocabulary hints** is off by default. Enable it with Whisper or Qwen3-ASR to pass dictionary
+terms and optional custom context to the local decoder. Hints can bias recognition, so keep
+the list focused on names and phrases you dictate.
+
+On Qwen3-ASR, **Stream text into the focused field** adds words as you speak into supported
+editable fields. Each update can revise the dictated text as more audio arrives. For longer
+dictations, live recognition re-decodes one 24-second segment at a time. When you stop,
+Lemon Whisper transcribes the full recording and finalizes only the range it inserted.
+Editing the field starts a new segment, and the final pass uses audio since that edit.
+Moving the caret or switching fields pauses live edits. With an unsupported or missing
+field, Lemon Whisper uses its standard final paste. Live streaming is off by default.
+
+**Spoken replacements** stores saved values in a separate local file. Add a spoken
+shortcut such as “my email” or “my phone number.” The settings show the saved value and let you
+edit it. Say the shortcut by itself to insert the value. Matching ignores capitalization and
+punctuation between or around words. Lemon Whisper expands the shortcut during final insertion.
+History shows the spoken shortcut.
+
+Codex or a terminal can edit the same local dictionary with Python 3:
+
+```sh
+python3 Tools/dictation_dictionary.py list
+python3 Tools/dictation_dictionary.py add Greptile --alias Graptile
+python3 Tools/dictation_dictionary.py add 'make down'
+```
+
+The local diagnostic log records the model output, dictionary corrections, and final
+text prepared for insertion, including expanded spoken replacements, alongside paste status.
 
 ## Local Storage
 
@@ -77,6 +112,7 @@ Your data:
 
 - Models: `~/Library/Application Support/LemonWhisper/models/`
 - Qwen model: `~/Library/Application Support/LemonWhisper/models/qwen3-asr-1.7b-4bit/`
+- Dictionary: `~/Library/Application Support/LemonWhisper/Dictionary.json`
 - History database: `~/Library/Application Support/LemonWhisper/Transcriptions.sqlite`
 
 ## Credits
@@ -86,4 +122,4 @@ LemonWhisper builds on open-source work from several projects and contributors:
 - [whisper.cpp](https://github.com/ggerganov/whisper.cpp) by Georgi Gerganov and contributors, which powers the local Whisper backend used by this app.
 - [mlx-voxtral-swift](https://github.com/VincentGourbin/mlx-voxtral-swift) by Vincent Gourbin and contributors, which powers the local Voxtral backend integration.
 
-- [MLX Audio Swift](https://github.com/Blaizzy/mlx-audio-swift) and [Qwen3-ASR](https://huggingface.co/Qwen/Qwen3-ASR-1.7B), which power the experimental local Qwen backend.
+- [MLX Audio Swift](https://github.com/Blaizzy/mlx-audio-swift) and [Qwen3-ASR](https://huggingface.co/Qwen/Qwen3-ASR-1.7B), which power the local Qwen backend.

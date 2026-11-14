@@ -32,9 +32,6 @@ extension LemonWhisperController {
         AppSettingsStore.recordingIndicatorEnabled = enabled
 
         guard isRecording else { return }
-        RecordingPulseHUD.shared.showPulse(
-            isRecording: enabled,
-            persistUntilRecordingStops: enabled
-        )
+        RecordingHUD.shared.showPulse(persistUntilRecordingStops: enabled)
     }
 }

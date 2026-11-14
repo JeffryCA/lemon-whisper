@@ -602,6 +602,7 @@ final class TranscriptionHistoryStore: ObservableObject {
 
     func record(
         rawText: String,
+        correctedText: String? = nil,
         language: String,
         backend: TranscriptionBackend,
         targetBundleIdentifier: String?,
@@ -614,6 +615,7 @@ final class TranscriptionHistoryStore: ObservableObject {
         do {
             let record = try await database.insert(
                 rawText: sanitized,
+                correctedText: correctedText,
                 language: language,
                 backend: backend.rawValue,
                 targetBundleIdentifier: targetBundleIdentifier,
@@ -696,9 +698,9 @@ final class TranscriptionHistoryStore: ObservableObject {
         let sanitized = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !sanitized.isEmpty else { return }
 
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(sanitized, forType: .string)
+        if !TextInsertionService.copyTextToPasteboard(sanitized) {
+            lastError = "Could not copy the transcript to the clipboard."
+        }
     }
 
     var menuHistoryFooterText: String? {

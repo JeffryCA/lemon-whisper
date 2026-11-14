@@ -78,9 +78,32 @@ private func appendLogData(_ data: Data, to url: URL) {
 
 func debugLog(_ message: String) {
     print(message)
-    let line = "[\(DebugLogger.formatter.string(from: Date()))] \(message)\n"
+    appendDebugLog(message)
+}
 
+func logTranscriptionProcessing(
+    id: UUID?, backend: String, original: String, dictionaryCorrected: String, processed: String,
+    pasteSucceeded: Bool
+) {
+    struct Comparison: Encodable {
+        let id: UUID?
+        let backend: String
+        let original: String
+        let dictionaryCorrected: String
+        let processed: String
+        let pasteSucceeded: Bool
+    }
+    let comparison = Comparison(
+        id: id, backend: backend, original: original, dictionaryCorrected: dictionaryCorrected,
+        processed: processed, pasteSucceeded: pasteSucceeded
+    )
+    guard let data = try? JSONEncoder().encode(comparison) else { return }
+    appendDebugLog("Transcription comparison \(String(decoding: data, as: UTF8.self))")
+}
+
+private func appendDebugLog(_ message: String) {
     DebugLogger.queue.sync {
+        let line = "[\(DebugLogger.formatter.string(from: Date()))] \(message)\n"
         guard let url = lemonWhisperLogFileURL() else { return }
         rotateDebugLogIfNeeded(at: url)
         guard let data = line.data(using: .utf8) else { return }

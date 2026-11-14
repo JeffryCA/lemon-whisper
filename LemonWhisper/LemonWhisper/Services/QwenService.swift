@@ -13,11 +13,17 @@ actor QwenService {
         try await worker.prepare(modelID: QwenModelCatalog.modelID)
     }
 
-    func transcribe(audioURL: URL, language: String) async throws -> String {
+    func transcribe(
+        audioURL: URL,
+        language: String,
+        context: String? = nil,
+        onPartial: (@Sendable (String) async -> Void)? = nil
+    ) async throws -> String {
         guard QwenModelCatalog.isDownloaded else { throw QwenServiceError.modelMissing }
         return try await worker.transcribe(
             audioURL: audioURL, modelID: QwenModelCatalog.modelID,
-            language: QwenModelCatalog.transcriptionLanguage(for: language)
+            language: QwenModelCatalog.transcriptionLanguage(for: language),
+            context: context, onPartial: onPartial
         )
     }
 

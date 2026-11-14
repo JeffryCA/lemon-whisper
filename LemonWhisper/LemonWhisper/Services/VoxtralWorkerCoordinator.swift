@@ -10,6 +10,7 @@ enum VoxtralWorkerCoordinatorError: LocalizedError, Equatable {
     case workerFailure(VoxtralWorkerError)
     case cancelled
     case invalidResponse
+    case previewUnavailable
 
     var errorDescription: String? {
         switch self {
@@ -21,6 +22,7 @@ enum VoxtralWorkerCoordinatorError: LocalizedError, Equatable {
         case .workerFailure(let error): return error.message
         case .cancelled: return "Voxtral transcription was cancelled."
         case .invalidResponse: return "Voxtral worker returned an unexpected response."
+        case .previewUnavailable: return "The model is no longer ready for live preview."
         }
     }
 }
@@ -112,6 +114,7 @@ private final class VoxtralWorkerSession: @unchecked Sendable {
     let events = VoxtralWorkerEventChannel()
     let modelID: String
     var parser = VoxtralJSONLineParser<VoxtralWorkerEvent>()
+    var outputContinuation: AsyncStream<Data>.Continuation?
     var isPrepared = false
 
     init(process: Process, input: FileHandle, output: FileHandle, diagnostics: FileHandle, modelID: String) {
@@ -151,7 +154,7 @@ actor VoxtralWorkerCoordinator {
     var isPrepared: Bool { session?.isPrepared == true && session?.process.isRunning == true }
 
     func prepare(modelID: String) async throws {
-        await acquireOperationSlot()
+        try await acquireOperationSlot()
         defer { operationInProgress = false }
         let generation = cancellationGeneration
         try Task.checkCancellation()
@@ -180,10 +183,23 @@ actor VoxtralWorkerCoordinator {
         throw lastError ?? VoxtralWorkerCoordinatorError.invalidResponse
     }
 
-    func transcribe(audioURL: URL, modelID: String, language: String?) async throws -> String {
-        await acquireOperationSlot()
-        defer { operationInProgress = false }
+    func transcribe(
+        audioURL: URL,
+        modelID: String,
+        language: String?,
+        context: String? = nil,
+        onPartial: (@Sendable (String) async -> Void)? = nil
+    ) async throws -> String {
         let generation = cancellationGeneration
+        try await acquireOperationSlot()
+        defer { operationInProgress = false }
+        try Task.checkCancellation()
+        guard generation == cancellationGeneration else { throw VoxtralWorkerCoordinatorError.cancelled }
+        // The final transcription owns model loading. A preview should never get
+        // stuck restarting the worker while the user is waiting to paste.
+        if onPartial != nil, (!isPrepared || session?.modelID != modelID) {
+            throw VoxtralWorkerCoordinatorError.previewUnavailable
+        }
         var lastError: Error?
         for attempt in 0..<2 {
             do {
@@ -196,19 +212,30 @@ actor VoxtralWorkerCoordinator {
                     terminateCurrentWorker()
                     active = try await launchAndPrepare(modelID: modelID)
                 }
+                try Task.checkCancellation()
+                guard generation == cancellationGeneration else { throw VoxtralWorkerCoordinatorError.cancelled }
                 let request = VoxtralWorkerTranscriptionRequest(
-                    audioPath: audioURL.path, modelID: modelID, language: language
+                    audioPath: audioURL.path, modelID: modelID, language: language,
+                    context: context, preview: onPartial == nil ? nil : true
                 )
                 try send(.transcribe(request), to: active)
-                let event = try await waitForEvent(
-                    from: active, requestID: request.id,
-                    timeout: transcriptionTimeout, operation: "transcribing"
-                )
-                switch event {
-                case .result(let result): return result.text
-                case .cancelled: terminateCurrentWorker(); throw VoxtralWorkerCoordinatorError.cancelled
-                case .failure(let failure): throw VoxtralWorkerCoordinatorError.workerFailure(failure.error)
-                default: throw VoxtralWorkerCoordinatorError.invalidResponse
+                let clock = ContinuousClock()
+                let deadline = clock.now + .seconds(onPartial == nil ? transcriptionTimeout : min(6, transcriptionTimeout))
+                while true {
+                    let remaining = clock.now.duration(to: deadline).components
+                    let timeout = Double(remaining.seconds) + Double(remaining.attoseconds) / 1e18
+                    guard timeout > 0 else { throw VoxtralWorkerCoordinatorError.timedOut("transcribing") }
+                    let event = try await waitForEvent(
+                        from: active, requestID: request.id,
+                        timeout: timeout, operation: "transcribing"
+                    )
+                    switch event {
+                    case .partial(let partial): await onPartial?(partial.text)
+                    case .result(let result): return result.text
+                    case .cancelled: throw VoxtralWorkerCoordinatorError.cancelled
+                    case .failure(let failure): throw VoxtralWorkerCoordinatorError.workerFailure(failure.error)
+                    default: throw VoxtralWorkerCoordinatorError.invalidResponse
+                    }
                 }
             } catch {
                 lastError = error
@@ -216,7 +243,7 @@ actor VoxtralWorkerCoordinator {
                 if error is CancellationError || generation != cancellationGeneration {
                     throw VoxtralWorkerCoordinatorError.cancelled
                 }
-                guard attempt == 0, Self.shouldRetry(error) else { throw error }
+                guard onPartial == nil, attempt == 0, Self.shouldRetry(error) else { throw error }
                 debugLog("⚠️ Voxtral worker failed; retrying once: \(error.localizedDescription)")
             }
         }
@@ -233,8 +260,9 @@ actor VoxtralWorkerCoordinator {
         terminateCurrentWorker()
     }
 
-    private func acquireOperationSlot() async {
-        while operationInProgress { try? await Task.sleep(nanoseconds: 25_000_000) }
+    private func acquireOperationSlot() async throws {
+        while operationInProgress { try await Task.sleep(nanoseconds: 25_000_000) }
+        try Task.checkCancellation()
         operationInProgress = true
     }
 
@@ -278,10 +306,15 @@ actor VoxtralWorkerCoordinator {
             output: stdoutPipe.fileHandleForReading,
             diagnostics: stderrPipe.fileHandleForReading, modelID: modelID
         )
-        stdoutPipe.fileHandleForReading.readabilityHandler = { [weak self, weak active] handle in
+        let (outputStream, outputContinuation) = AsyncStream<Data>.makeStream()
+        active.outputContinuation = outputContinuation
+        stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
-            guard !data.isEmpty, let self, let active else { return }
-            Task { await self.consumeOutput(data, from: active) }
+            if data.isEmpty {
+                outputContinuation.finish()
+            } else {
+                outputContinuation.yield(data)
+            }
         }
         stderrPipe.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
@@ -293,10 +326,20 @@ actor VoxtralWorkerCoordinator {
             Task { await self.workerTerminated(active, status: process.terminationStatus) }
         }
         do { try process.run() } catch {
+            active.output.readabilityHandler = nil
+            active.diagnostics.readabilityHandler = nil
+            outputContinuation.finish()
             throw VoxtralWorkerCoordinatorError.launchFailed(error.localizedDescription)
         }
         VoxtralWorkerProcessRegistry.shared.insert(process)
         session = active
+        // A single consumer preserves pipe order across split and coalesced JSON frames.
+        Task { [weak self, weak active] in
+            for await data in outputStream {
+                guard let self, let active else { return }
+                await self.consumeOutput(data, from: active)
+            }
+        }
         do {
             let hello = try await waitForHello(from: active)
             guard hello.protocolVersion == VoxtralWorkerProtocol.currentVersion else {
@@ -355,13 +398,14 @@ actor VoxtralWorkerCoordinator {
             for event in try active.parser.append(data) { await active.events.yield(event) }
         } catch {
             await active.events.finish(throwing: error)
-            terminateCurrentWorker()
+            if session === active { terminateCurrentWorker() }
         }
     }
 
     private func workerTerminated(_ active: VoxtralWorkerSession, status: Int32) {
         VoxtralWorkerProcessRegistry.shared.remove(active.process)
         active.output.readabilityHandler = nil
+        active.outputContinuation?.finish()
         active.diagnostics.readabilityHandler = nil
         Task { await active.events.finish(throwing: VoxtralWorkerCoordinatorError.workerExited(status)) }
         if session === active { session = nil }
@@ -371,6 +415,7 @@ actor VoxtralWorkerCoordinator {
         guard let active = session else { return }
         session = nil
         active.output.readabilityHandler = nil
+        active.outputContinuation?.finish()
         active.diagnostics.readabilityHandler = nil
         try? active.input.close()
         if active.process.isRunning { active.process.terminate() }

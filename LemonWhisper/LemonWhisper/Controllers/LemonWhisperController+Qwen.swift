@@ -5,7 +5,7 @@ extension LemonWhisperController {
         LocalModelItem(
             engine: .qwen, baseID: QwenModelCatalog.modelID, title: QwenModelCatalog.title,
             downloadSizeLabel: "~1.6 GB", expectedPeakMemoryLabel: "Not measured",
-            description: "Experimental local multilingual transcription. Apple Silicon required."
+            description: "Local multilingual transcription. Apple Silicon required."
         )
     }
 
@@ -19,7 +19,7 @@ extension LemonWhisperController {
             return
         }
         setupState = .ready
-        qwenStatus = "Qwen3-ASR ready (experimental)"
+        qwenStatus = "Qwen3-ASR ready"
         let previousWarmup = modelWarmupTask
         modelWarmupTask?.cancel()
         modelWarmupTask = nil

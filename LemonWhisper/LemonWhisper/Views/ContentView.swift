@@ -171,6 +171,10 @@ struct ContentView: View {
                     availableVoxtralModels: availableVoxtralModels
                 )
             }
+        case .dictationSettings:
+            DetailContainer(title: "Dictation Settings", onBack: navigationState.goHome) {
+                DictationSettingsView(backend: controller.selectedBackend)
+            }
         case .transcriptions:
             DetailContainer(
                 title: "Transcriptions",
@@ -304,6 +308,17 @@ struct ContentView: View {
                 Divider()
 
                 Button {
+                    navigationState.show(.dictationSettings)
+                } label: {
+                    HomeNavigationRow(title: "Dictation settings", subtitle: "Dictionary, vocabulary hints, and live preview")
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 14)
+                }
+                .buttonStyle(.plain)
+
+                Divider()
+
+                Button {
                     navigationState.show(.transcriptions)
                 } label: {
                     HomeNavigationRow(
@@ -334,7 +349,7 @@ struct ContentView: View {
 
     private var minimumContentWidth: CGFloat {
         switch navigationState.currentRoute {
-        case .manageModels:
+        case .manageModels, .dictationSettings:
             return 640
         case .transcriptions:
             return 720
@@ -345,7 +360,7 @@ struct ContentView: View {
 
     private var idealContentWidth: CGFloat {
         switch navigationState.currentRoute {
-        case .manageModels:
+        case .manageModels, .dictationSettings:
             return 720
         case .transcriptions:
             return 760

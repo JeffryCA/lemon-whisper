@@ -1,7 +1,7 @@
 import Foundation
 import AVFoundation
 
-/// Records microphone input straight to a 16‑kHz, 16‑bit, mono PCM WAV file.
+/// Records microphone input to a temporary WAV and optionally exposes recent audio for live preview.
 /// Works on macOS without any AVAudioSession gymnastics.
 class AudioRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
 
@@ -13,6 +13,8 @@ class AudioRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
 
     private var audioRecorder: AVAudioRecorder?
     private var isRecording = false
+    private var streamingCapture: StreamingAudioCapture?
+    private var streamingURL: URL?
 
     override init() {
         super.init()
@@ -22,7 +24,7 @@ class AudioRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
     /// Begin recording into a unique temporary WAV so a later recording cannot overwrite audio
     /// that is still being transcribed.
     @discardableResult
-    func startRecording() -> Bool {
+    func startRecording(livePreview: Bool = false) -> Bool {
         guard !isRecording else { return false }
 
         // 16‑kHz, 16‑bit, mono, little‑endian PCM
@@ -41,6 +43,18 @@ class AudioRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
         latestWavURL = nil
 
         MicrophoneManager.applySelectedInputDeviceIfNeeded(uniqueID: AppSettingsStore.selectedMicrophoneUniqueID)
+
+        if livePreview {
+            do {
+                streamingCapture = try StreamingAudioCapture(url: url)
+                streamingURL = url
+                isRecording = true
+                return true
+            } catch {
+                debugLog("Live audio capture unavailable, using standard recording: \(error.localizedDescription)")
+                try? FileManager.default.removeItem(at: url)
+            }
+        }
 
         do {
             audioRecorder = try AVAudioRecorder(url: url, settings: settings)
@@ -66,12 +80,34 @@ class AudioRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
         }
     }
 
+    var liveFrameCount: Int { streamingCapture?.frameCount ?? 0 }
+
+    var isCapturingLivePreview: Bool { streamingCapture != nil }
+
+    func previewSnapshot(from frame: Int, after lastUpdate: Int) throws
+        -> (endFrame: Int, isCompleteSegment: Bool, buffer: AVAudioPCMBuffer)? {
+        try streamingCapture?.snapshot(from: frame, after: lastUpdate)
+    }
+
     /// Stop recording and publish the WAV URL.
     func stopRecording() {
         guard isRecording else {
             print("⚠️ Tried to stop but wasn’t recording")
             return
         }
+        if let streamingCapture, let url = streamingURL {
+            if streamingCapture.stop() {
+                latestWavURL = url
+            } else {
+                try? FileManager.default.removeItem(at: url)
+            }
+            self.streamingCapture = nil
+            streamingURL = nil
+            isRecording = false
+            MicrophoneManager.restorePreviousInputDeviceIfNeeded()
+            return
+        }
+
         audioRecorder?.stop()
         isRecording = false
         MicrophoneManager.restorePreviousInputDeviceIfNeeded()
@@ -83,6 +119,7 @@ class AudioRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
             print("📁 WAV size: \(size) bytes")
             latestWavURL = url
         }
+        audioRecorder = nil
     }
 
     /// Stop recording and discard the temporary WAV file.
@@ -92,7 +129,10 @@ class AudioRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
             return
         }
 
-        let url = audioRecorder?.url
+        let url = streamingURL ?? audioRecorder?.url
+        _ = streamingCapture?.stop()
+        streamingCapture = nil
+        streamingURL = nil
         audioRecorder?.stop()
         audioRecorder?.deleteRecording()
         audioRecorder = nil

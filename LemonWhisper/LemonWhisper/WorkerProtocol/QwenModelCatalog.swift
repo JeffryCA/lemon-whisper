@@ -3,7 +3,7 @@ import Foundation
 enum QwenModelCatalog {
     static let modelID = "qwen3-asr-1.7b-4bit"
     static let repositoryID = "mlx-community/Qwen3-ASR-1.7B-4bit"
-    static let title = "Qwen3-ASR 1.7B (4-bit, experimental)"
+    static let title = "Qwen3-ASR 1.7B (4-bit)"
     /// Qwen expects language names; its upstream alias table omits some ISO codes (e.g. nl).
     static func transcriptionLanguage(for code: String) -> String? {
         ["en": "English", "es": "Spanish", "de": "German", "fr": "French",

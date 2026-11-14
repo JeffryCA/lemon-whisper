@@ -49,8 +49,11 @@ extension LemonWhisperController {
         let stoppedAt = Date()
         let backend = recordingBackend ?? selectedBackend
         debugLog("🛑 Stopping recording")
+        if liveWriteTask == nil {
+            _ = resetLiveSegmentIfEdited()
+        }
+        stopLivePreview()
         recorder.stopRecording()
-        RecordingPulseHUD.shared.showPulse(isRecording: false)
         isRecording = false
         recordingBackend = nil
         transcribeLatestRecording(recordingStoppedAt: stoppedAt, backend: backend)
@@ -81,12 +84,26 @@ extension LemonWhisperController {
         scheduledRecordingStop?.cancel()
         scheduledRecordingStop = nil
         let backend = recordingBackend ?? selectedBackend
+        stopLivePreview()
+        let insertion = liveInsertion
+        let pendingWrite = liveWriteTask
+        liveInsertion = nil
+        liveWriteTask = nil
+        if let insertion {
+            Task {
+                _ = await pendingWrite?.value
+                await insertion.discardLive()
+            }
+        }
         recorder.cancelRecording()
-        RecordingPulseHUD.shared.showPulse(isRecording: false)
+        RecordingHUD.shared.showPulse()
         isRecording = false
         recordingStartedAt = nil
         recordingBackend = nil
-        if backend == .voxtral || backend == .qwen {
+        recordingLanguage = nil
+        recordingDictionary = .init()
+        recordingContext = nil
+        if (backend == .voxtral || backend == .qwen), activeTranscriptionCounts[backend, default: 0] == 0 {
             if modelWarmupBackend == backend {
                 modelWarmupTask?.cancel()
                 modelWarmupTask = nil
@@ -123,40 +140,12 @@ extension LemonWhisperController {
 
         switch status {
         case .authorized:
-            capturePasteTargetApp()
-            guard recorder.startRecording() else {
-                debugLog("❌ Recording failed to start")
-                return
-            }
-            recordingStartedAt = Date()
-            recordingBackend = selectedBackend
-            RecordingPulseHUD.shared.showPulse(
-                isRecording: true,
-                persistUntilRecordingStops: recordingIndicatorEnabled
-            )
-            isRecording = true
-            onRecordingDidStart()
-            debugLog("✅ Recording started")
+            beginRecording()
         case .notDetermined:
             permissionManager.requestMicrophoneAccess { [weak self] granted in
-                guard let self else { return }
                 DispatchQueue.main.async {
                     if granted {
-                        debugLog("✅ Microphone permission granted")
-                        self.capturePasteTargetApp()
-                        guard self.recorder.startRecording() else {
-                            debugLog("❌ Recording failed to start after microphone permission prompt")
-                            return
-                        }
-                        self.recordingStartedAt = Date()
-                        self.recordingBackend = self.selectedBackend
-                        RecordingPulseHUD.shared.showPulse(
-                            isRecording: true,
-                            persistUntilRecordingStops: self.recordingIndicatorEnabled
-                        )
-                        self.isRecording = true
-                        self.onRecordingDidStart()
-                        debugLog("✅ Recording started after microphone permission prompt")
+                        self?.beginRecording()
                     } else {
                         debugLog("❌ Microphone permission denied")
                     }
@@ -169,32 +158,194 @@ extension LemonWhisperController {
         }
     }
 
+    private func beginRecording() {
+        guard !isRecording, canStartNewRecording else { return }
+        capturePasteTargetApp()
+
+        let backend = selectedBackend
+        let wantsPreview = backend.supportsLivePreview && AppSettingsStore.livePreviewEnabled
+            && activeTranscriptionCounts[backend, default: 0] == 0
+        let insertion = wantsPreview ? TranscriptionManager.shared.beginLiveDictation(processID: targetProcessID) : nil
+        if wantsPreview && insertion == nil {
+            debugLog("Live dictation unavailable for the focused field. Using final paste.")
+        }
+        let dictionary: TranscriptionDictionary
+        do {
+            dictionary = try TranscriptionDictionary.load()
+        } catch {
+            debugLog("Could not read transcription dictionary: \(error.localizedDescription)")
+            dictionary = .init()
+        }
+        let context = backend.supportsVocabularyHints && AppSettingsStore.vocabularyHintsEnabled
+            ? dictionary.context(additional: AppSettingsStore.transcriptionContext) : nil
+
+        guard recorder.startRecording(livePreview: insertion != nil) else {
+            debugLog("❌ Recording failed to start")
+            return
+        }
+        recordingStartedAt = Date()
+        liveAudioStartFrame = 0
+        liveResetAt = nil
+        recordingBackend = backend
+        recordingLanguage = selectedLanguageCode
+        recordingDictionary = dictionary
+        recordingContext = context
+        RecordingHUD.shared.showPulse(persistUntilRecordingStops: recordingIndicatorEnabled)
+        isRecording = true
+        onRecordingDidStart()
+
+        if let insertion, recorder.isCapturingLivePreview {
+            liveInsertion = insertion
+            startLivePreview(language: selectedLanguageCode, dictionary: dictionary, context: context)
+        }
+    }
+
+    private func stopLivePreview() {
+        livePreviewID = nil
+    }
+
+    @discardableResult
+    private func resetLiveSegmentIfEdited() -> Bool {
+        guard let insertion = liveInsertion,
+              insertion.fieldChange == .edited,
+              let next = insertion.nextSegment() else { return false }
+        liveInsertion = next
+        liveAudioStartFrame = recorder.liveFrameCount
+        liveResetAt = Date()
+        debugLog("Live dictation started a new segment after a manual edit.")
+        return true
+    }
+
+    private func startLivePreview(
+        language: String, dictionary: TranscriptionDictionary, context: String?
+    ) {
+        let id = UUID()
+        livePreviewID = id
+        // Observe edits even when an inference request is still running.
+        Task { @MainActor [weak self] in
+            while self?.livePreviewID == id {
+                try? await Task.sleep(for: .milliseconds(60))
+                guard let self, livePreviewID == id else { return }
+                if liveWriteTask == nil { resetLiveSegmentIfEdited() }
+            }
+        }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            var activeInsertion: LiveDictationInsertion?
+            var lastFrame = 0
+            var segmentStart = 0
+            var completedSegments: [String] = []
+            while livePreviewID == id {
+                try? await Task.sleep(for: .milliseconds(200))
+                guard livePreviewID == id else { return }
+                _ = resetLiveSegmentIfEdited()
+                guard let insertion = liveInsertion, insertion.fieldChange == .unchanged else { continue }
+                if activeInsertion !== insertion {
+                    activeInsertion = insertion
+                    segmentStart = liveAudioStartFrame
+                    lastFrame = segmentStart
+                    completedSegments.removeAll()
+                }
+                guard await QwenService.shared.isReady, livePreviewID == id else { continue }
+                do {
+                    guard let snapshot = try recorder.previewSnapshot(from: segmentStart, after: lastFrame) else { continue }
+                    let peak = snapshot.buffer.floatChannelData.map {
+                        UnsafeBufferPointer(start: $0[0], count: Int(snapshot.buffer.frameLength))
+                            .reduce(Float(0)) { max($0, abs($1)) }
+                    } ?? 0
+                    guard peak >= 0.003 else {
+                        lastFrame = snapshot.endFrame
+                        if snapshot.isCompleteSegment { segmentStart = lastFrame }
+                        continue
+                    }
+                    let url = try FileManager.default.writeBufferToWav(snapshot.buffer)
+                    defer { try? FileManager.default.removeItem(at: url) }
+                    // Re-decode the current audio segment so later speech can revise earlier words.
+                    let text = try await QwenService.shared.transcribe(
+                        audioURL: url, language: language, context: context, onPartial: { _ in }
+                    )
+                    guard livePreviewID == id else { return }
+                    guard !resetLiveSegmentIfEdited(), liveInsertion === insertion,
+                          insertion.fieldChange == .unchanged else { continue }
+                    lastFrame = snapshot.endFrame
+                    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else {
+                        if snapshot.isCompleteSegment { segmentStart = lastFrame }
+                        continue
+                    }
+                    let corrected = dictionary.applyingCorrections(to: trimmed)
+                    let revision = (completedSegments + [corrected]).joined(separator: " ")
+                    if snapshot.isCompleteSegment {
+                        completedSegments.append(corrected)
+                        segmentStart = lastFrame
+                    }
+                    let write = Task { await insertion.update(revision) }
+                    liveWriteTask = write
+                    let didWrite = await write.value
+                    guard livePreviewID == id else { return }
+                    liveWriteTask = nil
+                    guard didWrite else {
+                        debugLog("Live dictation paused because the field did not apply the edit.")
+                        if resetLiveSegmentIfEdited() { continue }
+                        if insertion.fieldChange == .caretMoved { continue }
+                        stopLivePreview()
+                        return
+                    }
+                } catch {
+                    if livePreviewID == id {
+                        debugLog("Live dictation stopped: \(error.localizedDescription)")
+                        stopLivePreview()
+                    }
+                    return
+                }
+            }
+        }
+    }
+
     private func transcribeLatestRecording(
         recordingStoppedAt: Date,
         backend: TranscriptionBackend
     ) {
+        let startedAt = liveResetAt ?? recordingStartedAt
+        let audioStartFrame = liveAudioStartFrame
+        let language = recordingLanguage ?? selectedLanguageCode
+        let dictionary = recordingDictionary
+        let context = recordingContext
+        let insertion = liveInsertion
+        let pendingWrite = liveWriteTask
+        liveInsertion = nil
+        liveWriteTask = nil
+        recordingStartedAt = nil
+        recordingLanguage = nil
+        recordingDictionary = .init()
+        recordingContext = nil
+
         guard let wavURL = recorder.latestWavURL else {
+            if let insertion {
+                Task {
+                    _ = await pendingWrite?.value
+                    await insertion.discardLive()
+                }
+            }
+            RecordingHUD.shared.showPulse()
             debugLog("⚠️ No latest recording URL available for transcription")
             unloadBackendIfUnused(backend)
             return
         }
 
-        let startedAt = recordingStartedAt
-        recordingStartedAt = nil
-
         if let startedAt {
             lastRecordingDuration = recordingStoppedAt.timeIntervalSince(startedAt)
         }
 
-        let language = selectedLanguageCode
         let targetBundleIdentifier = self.targetBundleIdentifier
         let targetProcessID = self.targetProcessID
         debugLog("📝 Starting transcription. backend=\(backend.rawValue) file=\(wavURL.lastPathComponent)")
         activeTranscriptionCounts[backend, default: 0] += 1
-        TranscriptionLoadingHUD.shared.show()
+        RecordingHUD.shared.showTranscriptionLoading()
 
         Task { @MainActor [weak self] in
             guard let self else { return }
+            _ = await pendingWrite?.value
             await waitForCurrentModelWarmup(backend: backend)
             TranscriptionManager.shared.transcribe(
                 from: wavURL,
@@ -203,7 +354,11 @@ extension LemonWhisperController {
                 targetBundleIdentifier: targetBundleIdentifier,
                 targetProcessID: targetProcessID,
                 recordingStartedAt: startedAt,
-                recordingStoppedAt: recordingStoppedAt
+                recordingStoppedAt: recordingStoppedAt,
+                dictionary: dictionary,
+                context: context,
+                liveInsertion: insertion,
+                audioStartFrame: audioStartFrame
             ) { [weak self] isActive in
                 guard let self else { return }
                 if !isActive {
@@ -213,7 +368,7 @@ extension LemonWhisperController {
                         self.activeTranscriptionCounts[backend, default: 1] - 1
                     )
                     if self.activeTranscriptionCounts.values.allSatisfy({ $0 == 0 }) {
-                        TranscriptionLoadingHUD.shared.hide()
+                        RecordingHUD.shared.hideTranscriptionLoading()
                     }
                     self.unloadBackendIfUnused(backend)
                 }

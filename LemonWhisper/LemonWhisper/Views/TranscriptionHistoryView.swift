@@ -64,6 +64,8 @@ private struct TranscriptionHistoryCard: View {
     let onCopy: () -> Void
     let onDelete: () -> Void
 
+    @State private var showsOriginal = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
@@ -98,6 +100,16 @@ private struct TranscriptionHistoryCard: View {
                 .lineSpacing(3)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
+
+            if item.correctedText != nil {
+                DisclosureGroup("Original transcript", isExpanded: $showsOriginal) {
+                    Text(item.rawText)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .padding(.top, 4)
+                }
+                .font(.callout)
+            }
         }
         .padding(16)
         .lemonSurface(showsBorder: true, showsShadow: true)

@@ -69,7 +69,7 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         let targetSize: NSSize
 
         switch route {
-        case .manageModels:
+        case .manageModels, .dictationSettings:
             minimumContentSize = NSSize(width: 640, height: 420)
             targetSize = NSSize(width: 720, height: 520)
         case .transcriptions:

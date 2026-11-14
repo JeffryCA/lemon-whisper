@@ -1,8 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// The recording HUD's visual content. Keep window lifecycle and cursor tracking in
-/// `RecordingPulseHUD`; this view exists separately so its appearance is editable in Canvas.
+/// The glass bubble shared by the recording and transcription states.
 struct RecordingIndicatorView: View {
     let size: CGFloat
 
@@ -149,66 +148,91 @@ private final class CursorTrackingPanelController {
 }
 
 @MainActor
-final class RecordingPulseHUD {
-    static let shared = RecordingPulseHUD()
+final class RecordingHUD {
+    static let shared = RecordingHUD()
 
     private var panel: NSPanel?
+    private var spinner: NSProgressIndicator?
     private var cursorTracker: CursorTrackingPanelController?
-    private var hideWorkItem: DispatchWorkItem?
+    private var pulseTask: Task<Void, Never>?
+    private var isPulseVisible = false
+    private var isTranscribing = false
     private let bubbleSize: CGFloat = 30
     private let glassPadding: CGFloat = 4
 
     private init() {}
 
-    func showPulse(isRecording: Bool, persistUntilRecordingStops: Bool = false) {
-        ensurePanel()
-        guard let panel else { return }
+    func showPulse(persistUntilRecordingStops: Bool = false) {
+        pulseTask?.cancel()
+        pulseTask = nil
+        isPulseVisible = true
+        updateVisibility()
 
-        hideWorkItem?.cancel()
-
-        cursorTracker?.start()
-
-        panel.alphaValue = 0
-        panel.orderFrontRegardless()
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.10
-            panel.animator().alphaValue = 1
+        guard !persistUntilRecordingStops else { return }
+        pulseTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(550))
+            guard !Task.isCancelled, let self else { return }
+            pulseTask = nil
+            isPulseVisible = false
+            updateVisibility()
         }
+    }
 
-        if isRecording && persistUntilRecordingStops {
+    func showTranscriptionLoading() {
+        pulseTask?.cancel()
+        pulseTask = nil
+        isPulseVisible = false
+        isTranscribing = true
+        updateVisibility()
+        spinner?.startAnimation(nil)
+    }
+
+    func hideTranscriptionLoading() {
+        isTranscribing = false
+        spinner?.stopAnimation(nil)
+        updateVisibility()
+    }
+
+    private func updateVisibility() {
+        guard isPulseVisible || isTranscribing else {
+            cursorTracker?.stop()
+            panel?.orderOut(nil)
             return
         }
 
-        let hideItem = DispatchWorkItem { [weak self] in
-            Task { @MainActor [weak self] in
-                guard let self, let panel = self.panel else { return }
-                NSAnimationContext.runAnimationGroup({ context in
-                    context.duration = 0.16
-                    panel.animator().alphaValue = 0
-                }, completionHandler: {
-                    Task { @MainActor [weak self, weak panel] in
-                        self?.cursorTracker?.stop()
-                        panel?.orderOut(nil)
-                    }
-                })
-            }
-        }
-        hideWorkItem = hideItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.55, execute: hideItem)
+        ensurePanel()
+        guard let panel, !panel.isVisible else { return }
+        cursorTracker?.start()
+        panel.orderFrontRegardless()
     }
 
     private func ensurePanel() {
         guard panel == nil else { return }
 
-        let panelSize = bubbleSize + 2 * glassPadding
-        let panel = makeFloatingHUDPanel(size: CGSize(width: panelSize, height: panelSize))
+        let side = bubbleSize + 2 * glassPadding
+        let size = CGSize(width: side, height: side)
+        let panel = makeFloatingHUDPanel(size: size)
+        let container = NSView(frame: NSRect(origin: .zero, size: size))
         let indicator = NSHostingView(
             rootView: RecordingIndicatorView(size: bubbleSize).padding(glassPadding)
         )
-        indicator.frame = NSRect(x: 0, y: 0, width: panelSize, height: panelSize)
-        panel.contentView = indicator
+        indicator.frame = container.bounds
+        container.addSubview(indicator)
 
+        let spinnerSize: CGFloat = 16
+        let spinnerInset = (side - spinnerSize) / 2
+        let spinner = NSProgressIndicator(
+            frame: NSRect(x: spinnerInset, y: spinnerInset, width: spinnerSize, height: spinnerSize)
+        )
+        spinner.style = .spinning
+        spinner.controlSize = .small
+        spinner.isIndeterminate = true
+        spinner.isDisplayedWhenStopped = false
+        container.addSubview(spinner)
+
+        panel.contentView = container
         self.panel = panel
+        self.spinner = spinner
         self.cursorTracker = CursorTrackingPanelController(panel: panel, verticalOffset: 18 - glassPadding)
     }
 }
@@ -235,61 +259,4 @@ final class RecordingPulseHUD {
         }
     }
     .frame(width: 240, height: 120)
-}
-
-@MainActor
-final class TranscriptionLoadingHUD {
-    static let shared = TranscriptionLoadingHUD()
-
-    private var panel: NSPanel?
-    private var spinner: NSProgressIndicator?
-    private var cursorTracker: CursorTrackingPanelController?
-    private let size: CGFloat = 30
-
-    private init() {}
-
-    func show() {
-        ensurePanel()
-        guard let panel else { return }
-
-        cursorTracker?.start()
-        panel.alphaValue = 1
-        panel.orderFrontRegardless()
-        spinner?.startAnimation(nil)
-    }
-
-    func hide() {
-        cursorTracker?.stop()
-        spinner?.stopAnimation(nil)
-        panel?.orderOut(nil)
-    }
-
-    private func ensurePanel() {
-        guard panel == nil else { return }
-
-        let panel = makeFloatingHUDPanel(size: CGSize(width: size, height: size))
-        let container = makeGlassHUDContainer(size: size)
-
-        let spinnerInset: CGFloat = 7
-        let spinner = NSProgressIndicator(
-            frame: NSRect(
-                x: spinnerInset,
-                y: spinnerInset,
-                width: size - (spinnerInset * 2),
-                height: size - (spinnerInset * 2)
-            )
-        )
-        spinner.style = .spinning
-        spinner.controlSize = .small
-        spinner.isIndeterminate = true
-        spinner.isDisplayedWhenStopped = false
-        spinner.startAnimation(nil)
-        container.addSubview(spinner)
-
-        panel.contentView = container
-
-        self.panel = panel
-        self.spinner = spinner
-        self.cursorTracker = CursorTrackingPanelController(panel: panel)
-    }
 }

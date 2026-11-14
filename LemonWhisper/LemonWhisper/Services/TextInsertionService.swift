@@ -65,6 +65,46 @@ final class TextInsertionService {
         }
     }
 
+    @MainActor
+    func beginLiveDictation(processID: pid_t?) -> LiveDictationInsertion? {
+        guard AXIsProcessTrusted(), let processID, processID != getpid(),
+              NSWorkspace.shared.frontmostApplication?.processIdentifier == processID,
+              let element = focusedElement(inApplicationPID: processID),
+              isEditableTextRole(element),
+              isAttributeSettable(kAXSelectedTextRangeAttribute as CFString, in: element),
+              let state = liveFieldState(for: element, processID: processID),
+              let span = LiveDictationRange(value: state.value, selection: state.selection) else { return nil }
+        return LiveDictationInsertion(service: self, element: element, processID: processID, span: span)
+    }
+
+    @MainActor
+    func liveFieldState(for element: AXUIElement, processID: pid_t) -> (value: String, selection: NSRange)? {
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == processID,
+              let focused = focusedElement(inApplicationPID: processID), CFEqual(element, focused),
+              let value = stringValue(for: element),
+              let range = selectedTextRange(for: element),
+              range.location >= 0, range.length >= 0 else { return nil }
+        let placeholder = stringAttributeValue(kAXPlaceholderValueAttribute as CFString, for: element)
+        let selection = NSRange(location: range.location, length: range.length)
+        let isEmptySelection = selection == NSRange(location: 0, length: 0)
+        // The Codex composer exposes its empty hint as AXValue with no AXPlaceholderValue.
+        let isCodexEmptyHint = NSRunningApplication(processIdentifier: processID)?.bundleIdentifier == "com.openai.codex"
+            && value == "Work with Codex\n"
+        let isEmpty = isEmptySelection && (value == placeholder || isCodexEmptyHint || value == "\n")
+        return (isEmpty ? "" : value, selection)
+    }
+
+    func setLiveSelection(_ range: NSRange, in element: AXUIElement) -> Bool {
+        var selection = CFRange(location: range.location, length: range.length)
+        guard let value = AXValueCreate(.cfRange, &selection) else { return false }
+        return AXUIElementSetAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, value) == .success
+    }
+
+    func setLiveSelectedText(_ text: String, in element: AXUIElement) -> Bool {
+        replaceSelectedTextAttribute(in: element, with: text)
+    }
+
+    @MainActor
     func insertText(
         _ text: String,
         targetBundleIdentifier: String?,
@@ -75,6 +115,7 @@ final class TextInsertionService {
             return TextInsertionResult(path: nil, errorMessage: "Cannot insert empty text.")
         }
 
+        let copied = Self.copyTextToPasteboard(sanitized)
         let target = InsertionTarget(
             bundleIdentifier: targetBundleIdentifier,
             processID: targetProcessID
@@ -83,17 +124,22 @@ final class TextInsertionService {
         let focused = ensureTargetIsActive(target)
         print("🎯 Focus target result: \(focused)")
 
-        let strategies: [(path: TextInsertionPath, copiesAfterSuccess: Bool, attempt: () -> Bool)] = [
-            (.unicodeKeyboard, true, { self.typeUsingUnicodeEvents(sanitized, target: target) }),
-            (.commandV, false, { self.pasteUsingCommandV(sanitized, target: target) }),
-            (.accessibility, true, { self.insertTextViaAccessibility(sanitized, target: target) }),
-            (.appleScript, false, { self.pasteWithAppleScript(sanitized, target: target) })
+        if focused,
+           let field = beginLiveDictation(processID: NSWorkspace.shared.frontmostApplication?.processIdentifier),
+           let result = field.finish(sanitized) {
+            // A verified write succeeds here. If the editor may already have
+            // mutated text, a second insertion could duplicate the transcript.
+            return result
+        }
+
+        let strategies: [(path: TextInsertionPath, attempt: () -> Bool)] = [
+            (.unicodeKeyboard, { self.typeUsingUnicodeEvents(sanitized, target: target) }),
+            (.commandV, { copied && self.pasteUsingCommandV(target: target) }),
+            (.accessibility, { self.insertTextViaAccessibility(sanitized, target: target) }),
+            (.appleScript, { copied && self.pasteWithAppleScript(target: target) })
         ]
 
         for strategy in strategies where strategy.attempt() {
-            if strategy.copiesAfterSuccess {
-                _ = copyTextToPasteboard(sanitized)
-            }
             return TextInsertionResult(path: strategy.path, errorMessage: nil)
         }
 
@@ -101,6 +147,12 @@ final class TextInsertionService {
             path: nil,
             errorMessage: "All insertion paths failed for target bundle \(targetBundleIdentifier ?? "unknown")."
         )
+    }
+
+    private func isEditableTextRole(_ element: AXUIElement) -> Bool {
+        guard let role = stringAttributeValue(kAXRoleAttribute as CFString, for: element) else { return false }
+        return [kAXTextFieldRole, kAXTextAreaRole, kAXComboBoxRole].contains(role)
+            && stringAttributeValue(kAXSubroleAttribute as CFString, for: element) != kAXSecureTextFieldSubrole
     }
 
     private func insertTextViaAccessibility(_ text: String, target: InsertionTarget) -> Bool {
@@ -382,10 +434,42 @@ final class TextInsertionService {
         _ text: String,
         target: InsertionTarget
     ) -> Bool {
-        guard ensureTargetIsActive(target) else {
-            return false
-        }
+        guard ensureTargetIsActive(target) else { return false }
 
+        return postUnicodeText(text)
+    }
+
+    @MainActor
+    func selectLiveTextBackward(_ characterCount: Int, processID: pid_t) -> Bool {
+        guard characterCount > 0,
+              NSWorkspace.shared.frontmostApplication?.processIdentifier == processID,
+              let down = CGEvent(keyboardEventSource: nil, virtualKey: 123, keyDown: true),
+              let up = CGEvent(keyboardEventSource: nil, virtualKey: 123, keyDown: false) else { return false }
+        down.flags = .maskShift
+        up.flags = .maskShift
+        for _ in 0..<characterCount {
+            down.post(tap: .cgAnnotatedSessionEventTap)
+            up.post(tap: .cgAnnotatedSessionEventTap)
+        }
+        return true
+    }
+
+    @MainActor
+    func typeLiveText(_ text: String, processID: pid_t) -> Bool {
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == processID else { return false }
+        if text.isEmpty {
+            guard let keyDown = CGEvent(keyboardEventSource: nil, virtualKey: 51, keyDown: true),
+                  let keyUp = CGEvent(keyboardEventSource: nil, virtualKey: 51, keyDown: false) else { return false }
+            keyDown.flags = []
+            keyUp.flags = []
+            keyDown.post(tap: .cgAnnotatedSessionEventTap)
+            keyUp.post(tap: .cgAnnotatedSessionEventTap)
+            return true
+        }
+        return postUnicodeText(text)
+    }
+
+    private func postUnicodeText(_ text: String) -> Bool {
         guard !text.isEmpty,
               let source = CGEventSource(stateID: .combinedSessionState) else {
             return false
@@ -404,6 +488,8 @@ final class TextInsertionService {
                 continue
             }
 
+            keyDown.flags = []
+            keyUp.flags = []
             keyDown.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: &chunk)
             keyUp.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: &chunk)
             keyDown.post(tap: .cgAnnotatedSessionEventTap)
@@ -414,10 +500,7 @@ final class TextInsertionService {
         return didPostAnyEvent
     }
 
-    private func pasteUsingCommandV(
-        _ text: String,
-        target: InsertionTarget
-    ) -> Bool {
+    private func pasteUsingCommandV(target: InsertionTarget) -> Bool {
         guard ensureTargetIsActive(target) else {
             return false
         }
@@ -429,10 +512,6 @@ final class TextInsertionService {
             return false
         }
 
-        guard copyTextToPasteboard(text) else {
-            return false
-        }
-
         keyDown.flags = .maskCommand
         keyUp.flags = .maskCommand
         keyDown.post(tap: .cgAnnotatedSessionEventTap)
@@ -441,15 +520,8 @@ final class TextInsertionService {
         return true
     }
 
-    private func pasteWithAppleScript(
-        _ text: String,
-        target: InsertionTarget
-    ) -> Bool {
+    private func pasteWithAppleScript(target: InsertionTarget) -> Bool {
         guard ensureTargetIsActive(target) else {
-            return false
-        }
-
-        guard copyTextToPasteboard(text) else {
             return false
         }
 
@@ -472,10 +544,14 @@ final class TextInsertionService {
         return true
     }
 
-    private func copyTextToPasteboard(_ text: String) -> Bool {
+    @MainActor
+    @discardableResult
+    static func copyTextToPasteboard(_ text: String) -> Bool {
         let pasteboard = NSPasteboard.general
+        let item = NSPasteboardItem()
+        guard item.setString(text, forType: .string) else { return false }
         pasteboard.clearContents()
-        let copied = pasteboard.setString(text, forType: .string)
+        let copied = pasteboard.writeObjects([item])
         if !copied {
             print("⚠️ Failed to copy transcript to pasteboard")
         }
