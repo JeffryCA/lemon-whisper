@@ -4,6 +4,12 @@ import SQLite3
 
 private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
+struct LiveDictationHistorySegment {
+    let transcript: LiveDictationInsertion.Transcript
+    let startedAt: Date?
+    let stoppedAt: Date
+}
+
 struct TranscriptionRecord: Identifiable, Hashable {
     let id: UUID
     let rawText: String
@@ -103,7 +109,8 @@ actor TranscriptionHistoryDatabase {
         backend: String,
         targetBundleIdentifier: String?,
         recordingStartedAt: Date? = nil,
-        recordingStoppedAt: Date? = nil
+        recordingStoppedAt: Date? = nil,
+        livePastePath: TextInsertionPath? = nil
     ) throws -> TranscriptionRecord {
         let record = TranscriptionRecord(
             id: UUID(),
@@ -115,10 +122,10 @@ actor TranscriptionHistoryDatabase {
             targetBundleIdentifier: targetBundleIdentifier,
             recordingStartedAt: recordingStartedAt,
             recordingStoppedAt: recordingStoppedAt,
-            pasteStatus: "pending",
-            pastePath: nil,
+            pasteStatus: livePastePath == nil ? "pending" : "succeeded",
+            pastePath: livePastePath?.rawValue,
             pasteError: nil,
-            pasteCompletedAt: nil
+            pasteCompletedAt: livePastePath == nil ? nil : recordingStoppedAt
         )
 
         let sql = """
@@ -154,7 +161,7 @@ actor TranscriptionHistoryDatabase {
         try bindText(record.pasteStatus, at: 10, in: statement)
         try bindOptionalText(record.pastePath, at: 11, in: statement)
         try bindOptionalText(record.pasteError, at: 12, in: statement)
-        sqlite3_bind_null(statement, 13)
+        bindOptionalDate(record.pasteCompletedAt, at: 13, in: statement)
 
         guard sqlite3_step(statement) == SQLITE_DONE else {
             throw TranscriptionHistoryError.statementExecutionFailed(lastErrorMessage())
@@ -607,7 +614,8 @@ final class TranscriptionHistoryStore: ObservableObject {
         backend: TranscriptionBackend,
         targetBundleIdentifier: String?,
         recordingStartedAt: Date? = nil,
-        recordingStoppedAt: Date? = nil
+        recordingStoppedAt: Date? = nil,
+        livePastePath: TextInsertionPath? = nil
     ) async -> TranscriptionRecord? {
         let sanitized = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !sanitized.isEmpty else { return nil }
@@ -620,7 +628,8 @@ final class TranscriptionHistoryStore: ObservableObject {
                 backend: backend.rawValue,
                 targetBundleIdentifier: targetBundleIdentifier,
                 recordingStartedAt: recordingStartedAt,
-                recordingStoppedAt: recordingStoppedAt
+                recordingStoppedAt: recordingStoppedAt,
+                livePastePath: livePastePath
             )
             items.insert(record, at: 0)
             lastError = nil
@@ -629,6 +638,29 @@ final class TranscriptionHistoryStore: ObservableObject {
         } catch {
             lastError = error.localizedDescription
             return nil
+        }
+    }
+
+    func recordLiveSegments(
+        _ segments: [LiveDictationHistorySegment], language: String, backend: TranscriptionBackend,
+        targetBundleIdentifier: String?
+    ) async {
+        for segment in segments {
+            let transcript = segment.transcript
+            let record = await record(
+                rawText: transcript.original,
+                correctedText: transcript.corrected == transcript.original ? nil : transcript.corrected,
+                language: language,
+                backend: backend,
+                targetBundleIdentifier: targetBundleIdentifier,
+                recordingStartedAt: segment.startedAt,
+                recordingStoppedAt: segment.stoppedAt,
+                livePastePath: transcript.path
+            )
+            logTranscriptionProcessing(
+                id: record?.id, backend: backend.rawValue, original: transcript.original,
+                dictionaryCorrected: transcript.corrected, processed: transcript.corrected, pasteSucceeded: true
+            )
         }
     }
 

@@ -147,4 +147,43 @@ struct TranscriptionHistoryDatabaseTests {
         #expect(records[0].pasteError == "All insertion paths failed for target bundle com.anthropic.claudefordesktop.")
         #expect(records[0].pasteCompletedAt == Date(timeIntervalSince1970: 1234))
     }
+
+    @MainActor
+    @Test func savesEarlierLiveSegmentsAlongsideTheFinalTranscript() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let database = try TranscriptionHistoryDatabase(
+            databaseURL: directory.appendingPathComponent("transcriptions.sqlite")
+        )
+        let store = TranscriptionHistoryStore(database: database)
+        let began = Date(timeIntervalSince1970: 1000)
+        let firstEdit = began.addingTimeInterval(5)
+        let secondEdit = began.addingTimeInterval(10)
+        let finished = began.addingTimeInterval(15)
+
+        await store.recordLiveSegments([
+            .init(
+                transcript: .init(original: "Lemon whisper", corrected: "Lemon Whisper", path: .unicodeKeyboard),
+                startedAt: began, stoppedAt: firstEdit
+            ),
+            .init(
+                transcript: .init(original: "Second segment.", corrected: "Second segment.", path: .accessibility),
+                startedAt: firstEdit, stoppedAt: secondEdit
+            )
+        ], language: "en", backend: .qwen, targetBundleIdentifier: "com.example.editor")
+        _ = await store.record(
+            rawText: "Last segment.", language: "en", backend: .qwen, targetBundleIdentifier: "com.example.editor",
+            recordingStartedAt: secondEdit, recordingStoppedAt: finished
+        )
+
+        let records = try await database.fetchLatest(limit: 10)
+        #expect(records.map(\.rawText) == ["Last segment.", "Second segment.", "Lemon whisper"])
+        #expect(records.map(\.displayText) == ["Last segment.", "Second segment.", "Lemon Whisper"])
+        #expect(records.map(\.recordingStartedAt) == [secondEdit, firstEdit, began])
+        #expect(records.map(\.recordingStoppedAt) == [finished, secondEdit, firstEdit])
+        #expect(records.map(\.pasteStatus) == ["pending", "succeeded", "succeeded"])
+        #expect(records.map(\.pastePath) == [nil, "accessibility", "unicodeKeyboard"])
+        #expect(records.map(\.pasteCompletedAt) == [nil, secondEdit, firstEdit])
+    }
 }

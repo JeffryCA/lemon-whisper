@@ -31,4 +31,56 @@ struct LiveDictationRangeTests {
         #expect(range.matches(value: "One\u{00A0}two.", selection: range.expectedSelection))
         #expect(!range.matches(value: "One two.", selection: NSRange(location: 0, length: 0)))
     }
+
+    @Test func revisesDictationOnABlankObsidianLine() throws {
+        var range = try #require(LiveDictationRange(
+            value: "Before\nAfter\n", selection: NSRange(location: 6, length: 0)
+        ))
+        let first = "One 🌍."
+        range.apply(first, to: range.dictatedRange)
+        let value = "Before\n\(first)\nAfter\n"
+        let selection = try #require(LiveDictationRange.alignSelection(
+            value: value, prefix: "Before\(first)", selectedText: ""
+        ))
+
+        let acceptedEditedSuffix = range.reconcileLineBoundaries(
+            value: "Before\n\(first)\nEdited\n", selection: selection, insertedText: first
+        )
+        #expect(!acceptedEditedSuffix)
+        let acceptedInsertion = range.reconcileLineBoundaries(value: value, selection: selection, insertedText: first)
+        #expect(acceptedInsertion)
+        #expect(range.dictatedRange == NSRange(location: 7, length: first.utf16.count))
+        #expect(LiveDictationRange.alignSelection(
+            value: value, prefix: "Before\(first)", selectedText: first
+        ) == range.dictatedRange)
+        #expect(LiveDictationRange.alignSelection(
+            value: value, prefix: "Before\(first)", selectedText: "Before"
+        ) == nil)
+
+        range.apply("One and two.", to: range.dictatedRange)
+        #expect(range.expectedValue == "Before\nOne and two.\nAfter\n")
+    }
+
+    @Test func revisesOnlyTheChangedSuffixOfALongDictation() throws {
+        let prefix = "Before\n"
+        let suffix = "\nAfter"
+        let shared = String(repeating: "A thought about work. ", count: 25) + "Then 🎙️"
+        let previous = shared + " imagine"
+        var span = try #require(LiveDictationRange(
+            value: prefix + suffix, selection: NSRange(location: prefix.utf16.count, length: 0)
+        ))
+        span.apply(previous, to: span.dictatedRange)
+
+        let appended = span.revision(from: previous, to: previous + " more")
+        #expect(appended.range == span.expectedSelection)
+        #expect(appended.backtrack == 0)
+        #expect(appended.text == " more")
+
+        let revision = span.revision(from: previous, to: shared + " create.")
+        #expect(revision.range == NSRange(location: (prefix + shared + " ").utf16.count, length: 7))
+        #expect(revision.backtrack == 7)
+        #expect(revision.text == "create.")
+        span.apply(revision.text, to: revision.range)
+        #expect(span.expectedValue == prefix + shared + " create." + suffix)
+    }
 }

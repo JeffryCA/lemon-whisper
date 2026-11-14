@@ -23,9 +23,69 @@ struct LiveDictationRange {
 
     func matchesText(_ value: String) -> Bool {
         // Web editors represent some ordinary spaces as nonbreaking spaces in AXValue.
-        value.replacingOccurrences(of: "\u{00A0}", with: " ").utf16.elementsEqual(
-            expectedValue.replacingOccurrences(of: "\u{00A0}", with: " ").utf16
+        Self.sameText(value, expectedValue)
+    }
+
+    private static func sameText(_ lhs: String, _ rhs: String) -> Bool {
+        lhs.replacingOccurrences(of: "\u{00A0}", with: " ").utf16.elementsEqual(
+            rhs.replacingOccurrences(of: "\u{00A0}", with: " ").utf16
         )
+    }
+
+    /// Some editors count line separators differently in AXValue and AX ranges.
+    /// Align AXStringForRange's text up to the caret to AXValue.
+    static func alignSelection(value: String, prefix: String, selectedText: String) -> NSRange? {
+        var valueUnits = value.utf16.makeIterator()
+        var end = 0
+        for unit in prefix.utf16 {
+            var observed = valueUnits.next()
+            end += 1
+            while observed == 0x0A, observed != unit {
+                observed = valueUnits.next()
+                end += 1
+            }
+            guard observed == unit else { return nil }
+        }
+        let length = selectedText.utf16.count
+        guard end >= length else { return nil }
+        let range = NSRange(location: end - length, length: length)
+        guard let indices = Range(range, in: value),
+              sameText(String(value[indices]), selectedText) else { return nil }
+        return range
+    }
+
+    /// Some editors omit blank lines from AXValue until they contain text. Accept
+    /// the insertion at the reported caret if only adjacent newlines changed.
+    mutating func reconcileLineBoundaries(
+        value: String, selection: NSRange, insertedText: String
+    ) -> Bool {
+        let length = insertedText.utf16.count
+        let observed = value as NSString
+        guard selection.length == 0, selection.location >= length, selection.location <= observed.length else {
+            return false
+        }
+        let range = NSRange(location: selection.location - length, length: length)
+        guard Self.sameText(observed.substring(with: range), insertedText) else { return false }
+
+        let expected = expectedValue as NSString
+        let expectedPrefix = expected.substring(to: dictatedRange.location)
+        let observedPrefix = observed.substring(to: range.location)
+        let expectedSuffix = expected.substring(from: NSMaxRange(dictatedRange))
+        let observedSuffix = observed.substring(from: NSMaxRange(range))
+        let stripTrailingNewlines = #"\n+\z"#
+        let stripLeadingNewlines = #"\A\n+"#
+        guard Self.sameText(
+            expectedPrefix.replacingOccurrences(of: stripTrailingNewlines, with: "", options: .regularExpression),
+            observedPrefix.replacingOccurrences(of: stripTrailingNewlines, with: "", options: .regularExpression)
+        ), Self.sameText(
+            expectedSuffix.replacingOccurrences(of: stripLeadingNewlines, with: "", options: .regularExpression),
+            observedSuffix.replacingOccurrences(of: stripLeadingNewlines, with: "", options: .regularExpression)
+        ) else { return false }
+
+        expectedValue = value
+        dictatedRange = range
+        expectedSelection = selection
+        return true
     }
 
     mutating func apply(_ text: String, to range: NSRange) {
@@ -34,11 +94,33 @@ struct LiveDictationRange {
         expectedSelection = NSRange(location: NSMaxRange(dictatedRange), length: 0)
         hasWritten = true
     }
+
+    /// Keep the confirmed prefix in place and replace only the part that changed.
+    func revision(from previous: String, to text: String) -> (range: NSRange, text: String, backtrack: Int) {
+        var prefixUnits = 0
+        var prefixCharacters = 0
+        for (old, new) in zip(previous, text) {
+            guard String(old).utf16.elementsEqual(String(new).utf16) else { break }
+            prefixUnits += String(old).utf16.count
+            prefixCharacters += 1
+        }
+        return (
+            NSRange(location: dictatedRange.location + prefixUnits, length: dictatedRange.length - prefixUnits),
+            String(text.dropFirst(prefixCharacters)),
+            previous.dropFirst(prefixCharacters).count
+        )
+    }
 }
 
 /// Writes only to the verified dictated span in the original focused field.
 @MainActor
 final class LiveDictationInsertion {
+    struct Transcript {
+        let original: String
+        let corrected: String
+        let path: TextInsertionPath
+    }
+
     private let service: TextInsertionService
     private let element: AXUIElement
     private let processID: pid_t
@@ -47,6 +129,7 @@ final class LiveDictationInsertion {
     private var writeWasUnverified = false
     private var usesKeyboard = false
     private var insertedText = ""
+    private(set) var transcript: Transcript?
 
     init(service: TextInsertionService, element: AXUIElement, processID: pid_t, span: LiveDictationRange) {
         self.service = service
@@ -69,11 +152,15 @@ final class LiveDictationInsertion {
         return LiveDictationInsertion(service: service, element: element, processID: processID, span: newSpan)
     }
 
-    func update(_ text: String) async -> Bool {
+    func update(_ text: String, original: String? = nil) async -> Bool {
         guard validate() else { return false }
-        if text.utf16.elementsEqual(insertedText.utf16) { return true }
-        guard await writeLive(text, in: span.dictatedRange) != nil else { return false }
-        insertedText = text
+        if !text.utf16.elementsEqual(insertedText.utf16) {
+            guard await writeLive(text, in: span.dictatedRange) != nil else { return false }
+            insertedText = text
+        }
+        if let original, span.hasWritten {
+            transcript = Transcript(original: original, corrected: text, path: usesKeyboard ? .unicodeKeyboard : .accessibility)
+        }
         return true
     }
 
@@ -98,7 +185,7 @@ final class LiveDictationInsertion {
     }
 
     func finish(_ text: String) -> TextInsertionResult? {
-        guard validate() else {
+        guard let state = validatedState(), !state.prefersKeyboard else {
             // A session that never changed the document can use ordinary paste.
             return canUseStandardPaste ? nil : interrupted
         }
@@ -121,64 +208,85 @@ final class LiveDictationInsertion {
         .init(path: nil, errorMessage: "The focused field changed or could not apply the final edit. The transcript is in History.")
     }
 
-    private func validate() -> Bool {
+    private func validate() -> Bool { validatedState() != nil }
+
+    private func validatedState() -> (value: String, selection: NSRange, prefersKeyboard: Bool)? {
         guard !fieldChanged, !writeWasUnverified,
               let state = service.liveFieldState(for: element, processID: processID),
               span.matches(value: state.value, selection: state.selection) else {
             fieldChanged = true
-            return false
+            return nil
         }
-        return true
+        return state
     }
 
-    private func writeLive(_ text: String, in range: NSRange) async -> TextInsertionPath? {
-        if !usesKeyboard, !span.expectedValue.isEmpty {
-            if write(text, in: range) { return .accessibility }
+    private func writeLive(_ text: String, in fullRange: NSRange) async -> TextInsertionPath? {
+        guard let originalState = validatedState() else { return nil }
+        if span.hasWritten, text.utf16.elementsEqual(insertedText.utf16) {
+            return usesKeyboard ? .unicodeKeyboard : .accessibility
+        }
+        if !usesKeyboard, !originalState.prefersKeyboard, !span.expectedValue.isEmpty {
+            if write(text, in: fullRange) { return .accessibility }
             guard validate() else { return nil }
         }
 
-        let startingSelection = span.expectedSelection
-        if range != startingSelection {
-            // Web editors may acknowledge AX selection changes without moving
-            // the caret. Select backwards only from the verified end of our span.
-            guard startingSelection.length == 0, startingSelection.location == NSMaxRange(range),
-                  service.selectLiveTextBackward(insertedText.count, processID: processID) else {
-                return nil
-            }
-            for _ in 0..<10 {
-                try? await Task.sleep(for: .milliseconds(15))
-                guard let current = service.liveFieldState(for: element, processID: processID),
-                      span.matchesText(current.value) else { break }
-                if current.selection == range { break }
-            }
-        }
+        let revision = span.hasWritten ? span.revision(from: insertedText, to: text) : (fullRange, text, 0)
+        let (range, replacement, backtrack) = revision
+        guard await selectForLiveWrite(range, backtrack: backtrack) else { return nil }
         guard let state = service.liveFieldState(for: element, processID: processID),
               span.matchesText(state.value),
               state.selection == range else {
             fieldChanged = true
             return nil
         }
-        guard service.typeLiveText(text, processID: processID) else {
-            if range != startingSelection { _ = service.setLiveSelection(startingSelection, in: element) }
+        guard service.typeLiveText(replacement, processID: processID) else {
+            if range != span.expectedSelection, !originalState.prefersKeyboard {
+                _ = service.setLiveSelection(originalState.selection, in: element)
+            }
             return nil
         }
 
         // Keyboard input is asynchronous in web editors. Check the actual text
         // and caret before allowing another batch or replacing this span.
         var updated = span
-        updated.apply(text, to: range)
-        for _ in 0..<15 {
+        updated.apply(replacement, to: range)
+        let clock = ContinuousClock()
+        let timeout = clock.now + .seconds(2)
+        repeat {
             try? await Task.sleep(for: .milliseconds(20))
             guard let current = service.liveFieldState(for: element, processID: processID) else { break }
-            if updated.matches(value: current.value, selection: current.selection) {
+            if updated.matches(value: current.value, selection: current.selection)
+                || updated.reconcileLineBoundaries(
+                    value: current.value, selection: current.selection, insertedText: text
+                ) {
                 usesKeyboard = true
                 span = updated
                 return .unicodeKeyboard
             }
-        }
+        } while clock.now < timeout
         // The events may still have reached the editor. Avoid a second insertion.
         writeWasUnverified = true
         return nil
+    }
+
+    private func selectForLiveWrite(_ range: NSRange, backtrack: Int) async -> Bool {
+        guard let state = validatedState() else { return false }
+        if state.selection == range { return true }
+        // Select from the real caret. An AX selection can silently include a
+        // paragraph separator omitted from the editor's selected text.
+        guard state.selection.length == 0, state.selection.location == NSMaxRange(range),
+              service.selectLiveTextBackward(backtrack, processID: processID) else {
+            return false
+        }
+        let clock = ContinuousClock()
+        let timeout = clock.now + .seconds(2)
+        repeat {
+            try? await Task.sleep(for: .milliseconds(20))
+            guard let current = service.liveFieldState(for: element, processID: processID),
+                  span.matchesText(current.value) else { return false }
+            if current.selection == range { return true }
+        } while clock.now < timeout
+        return false
     }
 
     private func write(_ text: String, in range: NSRange) -> Bool {
@@ -201,7 +309,10 @@ final class LiveDictationInsertion {
             writeWasUnverified = true
             return false
         }
-        guard updated.matchesText(state.value) else {
+        guard updated.matchesText(state.value)
+                || updated.reconcileLineBoundaries(
+                    value: state.value, selection: state.selection, insertedText: text
+                ) else {
             // Some editors acknowledge AXSelectedText without applying the edit.
             // Permit regular paste only if a fresh read confirms nothing changed.
             writeWasUnverified = !span.matchesText(state.value)

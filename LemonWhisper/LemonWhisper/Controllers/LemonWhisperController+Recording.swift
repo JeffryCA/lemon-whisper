@@ -89,6 +89,7 @@ extension LemonWhisperController {
         let pendingWrite = liveWriteTask
         liveInsertion = nil
         liveWriteTask = nil
+        liveHistorySegments.removeAll()
         if let insertion {
             Task {
                 _ = await pendingWrite?.value
@@ -209,9 +210,15 @@ extension LemonWhisperController {
         guard let insertion = liveInsertion,
               insertion.fieldChange == .edited,
               let next = insertion.nextSegment() else { return false }
+        let editedAt = Date()
+        if let transcript = insertion.transcript {
+            liveHistorySegments.append(LiveDictationHistorySegment(
+                transcript: transcript, startedAt: liveResetAt ?? recordingStartedAt, stoppedAt: editedAt
+            ))
+        }
         liveInsertion = next
         liveAudioStartFrame = recorder.liveFrameCount
-        liveResetAt = Date()
+        liveResetAt = editedAt
         debugLog("Live dictation started a new segment after a manual edit.")
         return true
     }
@@ -234,7 +241,8 @@ extension LemonWhisperController {
             var activeInsertion: LiveDictationInsertion?
             var lastFrame = 0
             var segmentStart = 0
-            var completedSegments: [String] = []
+            var completedOriginal: [String] = []
+            var completedCorrected: [String] = []
             while livePreviewID == id {
                 try? await Task.sleep(for: .milliseconds(200))
                 guard livePreviewID == id else { return }
@@ -244,7 +252,8 @@ extension LemonWhisperController {
                     activeInsertion = insertion
                     segmentStart = liveAudioStartFrame
                     lastFrame = segmentStart
-                    completedSegments.removeAll()
+                    completedOriginal.removeAll()
+                    completedCorrected.removeAll()
                 }
                 guard await QwenService.shared.isReady, livePreviewID == id else { continue }
                 do {
@@ -274,12 +283,16 @@ extension LemonWhisperController {
                         continue
                     }
                     let corrected = dictionary.applyingCorrections(to: trimmed)
-                    let revision = (completedSegments + [corrected]).joined(separator: " ")
                     if snapshot.isCompleteSegment {
-                        completedSegments.append(corrected)
+                        completedOriginal.append(trimmed)
+                        completedCorrected.append(corrected)
                         segmentStart = lastFrame
                     }
-                    let write = Task { await insertion.update(revision) }
+                    let original = snapshot.isCompleteSegment ? completedOriginal : completedOriginal + [trimmed]
+                    let revision = snapshot.isCompleteSegment ? completedCorrected : completedCorrected + [corrected]
+                    let write = Task {
+                        await insertion.update(revision.joined(separator: " "), original: original.joined(separator: " "))
+                    }
                     liveWriteTask = write
                     let didWrite = await write.value
                     guard livePreviewID == id else { return }
@@ -313,19 +326,24 @@ extension LemonWhisperController {
         let context = recordingContext
         let insertion = liveInsertion
         let pendingWrite = liveWriteTask
+        let historySegments = liveHistorySegments
+        let targetBundleIdentifier = self.targetBundleIdentifier
+        let targetProcessID = self.targetProcessID
         liveInsertion = nil
         liveWriteTask = nil
+        liveHistorySegments.removeAll()
         recordingStartedAt = nil
         recordingLanguage = nil
         recordingDictionary = .init()
         recordingContext = nil
 
         guard let wavURL = recorder.latestWavURL else {
-            if let insertion {
-                Task {
-                    _ = await pendingWrite?.value
-                    await insertion.discardLive()
-                }
+            Task {
+                _ = await pendingWrite?.value
+                await TranscriptionHistoryStore.shared.recordLiveSegments(
+                    historySegments, language: language, backend: backend, targetBundleIdentifier: targetBundleIdentifier
+                )
+                await insertion?.discardLive()
             }
             RecordingHUD.shared.showPulse()
             debugLog("⚠️ No latest recording URL available for transcription")
@@ -337,8 +355,6 @@ extension LemonWhisperController {
             lastRecordingDuration = recordingStoppedAt.timeIntervalSince(startedAt)
         }
 
-        let targetBundleIdentifier = self.targetBundleIdentifier
-        let targetProcessID = self.targetProcessID
         debugLog("📝 Starting transcription. backend=\(backend.rawValue) file=\(wavURL.lastPathComponent)")
         activeTranscriptionCounts[backend, default: 0] += 1
         RecordingHUD.shared.showTranscriptionLoading()
@@ -358,7 +374,8 @@ extension LemonWhisperController {
                 dictionary: dictionary,
                 context: context,
                 liveInsertion: insertion,
-                audioStartFrame: audioStartFrame
+                audioStartFrame: audioStartFrame,
+                liveHistorySegments: historySegments
             ) { [weak self] isActive in
                 guard let self else { return }
                 if !isActive {

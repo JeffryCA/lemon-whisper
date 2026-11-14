@@ -78,20 +78,43 @@ final class TextInsertionService {
     }
 
     @MainActor
-    func liveFieldState(for element: AXUIElement, processID: pid_t) -> (value: String, selection: NSRange)? {
+    func liveFieldState(
+        for element: AXUIElement, processID: pid_t
+    ) -> (value: String, selection: NSRange, prefersKeyboard: Bool)? {
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == processID,
               let focused = focusedElement(inApplicationPID: processID), CFEqual(element, focused),
               let value = stringValue(for: element),
               let range = selectedTextRange(for: element),
               range.location >= 0, range.length >= 0 else { return nil }
         let placeholder = stringAttributeValue(kAXPlaceholderValueAttribute as CFString, for: element)
-        let selection = NSRange(location: range.location, length: range.length)
+        let rawSelection = NSRange(location: range.location, length: range.length)
+        let bundleIdentifier = NSRunningApplication(processIdentifier: processID)?.bundleIdentifier
+        let selection = alignedLiveSelection(rawSelection, value: value, in: element) ?? rawSelection
         let isEmptySelection = selection == NSRange(location: 0, length: 0)
         // The Codex composer exposes its empty hint as AXValue with no AXPlaceholderValue.
-        let isCodexEmptyHint = NSRunningApplication(processIdentifier: processID)?.bundleIdentifier == "com.openai.codex"
-            && value == "Work with Codex\n"
+        let isCodexEmptyHint = bundleIdentifier == "com.openai.codex" && value == "Work with Codex\n"
         let isEmpty = isEmptySelection && (value == placeholder || isCodexEmptyHint || value == "\n")
-        return (isEmpty ? "" : value, selection)
+        // A caret at a line boundary can share an AX offset with another line.
+        // Keyboard events act on the actual caret even where AX offsets are ambiguous.
+        let text = value as NSString
+        let touchesLineBreak = selection.location < text.length && text.character(at: selection.location) == 0x0A
+        return (isEmpty ? "" : value, selection, selection != rawSelection || touchesLineBreak)
+    }
+
+    private func alignedLiveSelection(_ selection: NSRange, value: String, in element: AXUIElement) -> NSRange? {
+        let (end, overflow) = selection.location.addingReportingOverflow(selection.length)
+        guard !overflow, end > 0, end <= value.utf16.count, value.utf16.contains(0x0A) else { return nil }
+        var prefixRange = CFRange(location: 0, length: end)
+        guard let argument = AXValueCreate(.cfRange, &prefixRange) else { return nil }
+        var result: CFTypeRef?
+        guard AXUIElementCopyParameterizedAttributeValue(
+            element, kAXStringForRangeParameterizedAttribute as CFString, argument, &result
+        ) == .success, let prefix = result as? String, prefix.utf16.count == end else { return nil }
+        let selectedText = selection.length > 0
+            ? stringAttributeValue(kAXSelectedTextAttribute as CFString, for: element)
+            : ""
+        guard let selectedText else { return nil }
+        return LiveDictationRange.alignSelection(value: value, prefix: prefix, selectedText: selectedText)
     }
 
     func setLiveSelection(_ range: NSRange, in element: AXUIElement) -> Bool {

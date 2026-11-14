@@ -98,6 +98,7 @@ class TranscriptionManager {
         context: String? = nil,
         liveInsertion: LiveDictationInsertion? = nil,
         audioStartFrame: Int = 0,
+        liveHistorySegments: [LiveDictationHistorySegment] = [],
         onActivityChanged: ((Bool) -> Void)? = nil
     ) {
         Task {
@@ -108,6 +109,11 @@ class TranscriptionManager {
                 Task { @MainActor in
                     onActivityChanged?(false)
                 }
+            }
+            if !liveHistorySegments.isEmpty {
+                await TranscriptionHistoryStore.shared.recordLiveSegments(
+                    liveHistorySegments, language: language, backend: backend, targetBundleIdentifier: targetBundleIdentifier
+                )
             }
             do {
                 let result: String
@@ -139,7 +145,10 @@ class TranscriptionManager {
                     )
                 case .qwen:
                     if audioStartFrame > 0 {
-                        guard let tail = try FileManager.default.copyWavTail(url, from: audioStartFrame) else { return }
+                        guard let tail = try FileManager.default.copyWavTail(url, from: audioStartFrame) else {
+                            debugLog("No audio was recorded after the last manual edit.")
+                            return
+                        }
                         defer { try? FileManager.default.removeItem(at: tail) }
                         result = try await QwenService.shared.transcribe(audioURL: tail, language: language, context: context)
                     } else {
