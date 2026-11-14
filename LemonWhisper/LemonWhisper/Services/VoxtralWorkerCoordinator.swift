@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 enum VoxtralWorkerCoordinatorError: LocalizedError, Equatable {
@@ -262,12 +263,18 @@ actor VoxtralWorkerCoordinator {
         let helperURL = try helperURLOverride ?? Self.helperURL()
         let process = Process()
         let stdinPipe = Pipe(); let stdoutPipe = Pipe(); let stderrPipe = Pipe()
+        // The worker can exit between checking isRunning and writing a command.
+        // Make that write throw EPIPE instead of terminating the app with SIGPIPE.
+        let input = stdinPipe.fileHandleForWriting
+        guard fcntl(input.fileDescriptor, F_SETNOSIGPIPE, 1) != -1 else {
+            throw VoxtralWorkerCoordinatorError.launchFailed(String(cString: strerror(errno)))
+        }
         process.executableURL = helperURL
         process.standardInput = stdinPipe
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
         let active = VoxtralWorkerSession(
-            process: process, input: stdinPipe.fileHandleForWriting,
+            process: process, input: input,
             output: stdoutPipe.fileHandleForReading,
             diagnostics: stderrPipe.fileHandleForReading, modelID: modelID
         )
