@@ -7,6 +7,8 @@ extension LemonWhisperController {
             return WhisperMemoryController()
         case .voxtral:
             return VoxtralMemoryController()
+        case .qwen:
+            return QwenMemoryController()
         }
     }
 

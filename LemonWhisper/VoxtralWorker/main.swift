@@ -2,6 +2,8 @@ import AVFoundation
 import Darwin
 import Foundation
 import VoxtralCore
+import MLXAudioCore
+import MLXAudioSTT
 
 private final class ProtocolWriter: @unchecked Sendable {
     private let handle: FileHandle
@@ -30,6 +32,7 @@ private final class ProtocolWriter: @unchecked Sendable {
 private actor VoxtralWorkerEngine {
     private let writer: ProtocolWriter
     private var pipeline: VoxtralPipeline?
+    private var qwenModel: Qwen3ASRModel?
     private var loadedModelID: String?
     private var operation: Task<Void, Never>?
 
@@ -58,9 +61,19 @@ private actor VoxtralWorkerEngine {
     private func prepare(_ request: VoxtralWorkerPrepareRequest) async {
         defer { operation = nil }
         do {
-            let prepared = try await loadPipeline(modelID: request.modelID)
-            try Task.checkCancellation()
-            try await materializeWeights(prepared)
+            if request.modelID == QwenModelCatalog.modelID {
+                guard QwenModelCatalog.isDownloaded else { throw QwenServiceWorkerError.modelMissing }
+                if qwenModel == nil {
+                    pipeline?.unload()
+                    pipeline = nil
+                    qwenModel = try await Qwen3ASRModel.fromModelDirectory(QwenModelCatalog.directory)
+                    loadedModelID = request.modelID
+                }
+            } else {
+                let prepared = try await loadPipeline(modelID: request.modelID)
+                try Task.checkCancellation()
+                try await materializeWeights(prepared)
+            }
             try Task.checkCancellation()
             // Publishing completion means the worker is ready for the next command. Clear the
             // operation first so an immediate transcription cannot observe a stale busy state.
@@ -77,7 +90,7 @@ private actor VoxtralWorkerEngine {
 
     private func transcribe(_ request: VoxtralWorkerTranscriptionRequest) async {
         defer { operation = nil }
-        guard let pipeline, loadedModelID == request.modelID else {
+        guard (pipeline != nil || qwenModel != nil), loadedModelID == request.modelID else {
             fail(request.id, .invalidRequest, "Requested model is not prepared.", true)
             Darwin.exit(1)
         }
@@ -86,21 +99,75 @@ private actor VoxtralWorkerEngine {
             Darwin.exit(1)
         }
         do {
-            let text = try await pipeline.transcribe(
-                audio: URL(fileURLWithPath: request.audioPath), language: request.language
+            let text = try await transcribeFile(
+                URL(fileURLWithPath: request.audioPath), language: request.language
             )
             try Task.checkCancellation()
             operation = nil
             writer.send(.result(VoxtralWorkerResult(requestID: request.id, text: text)))
         } catch is CancellationError {
             writer.send(.cancelled(VoxtralWorkerCancelled(requestID: request.id)))
-            pipeline.unload()
+            pipeline?.unload()
             Darwin.exit(0)
         } catch {
             fail(request.id, .transcriptionFailed, error.localizedDescription, true)
-            pipeline.unload()
+            pipeline?.unload()
             Darwin.exit(1)
         }
+    }
+
+    private func transcribeFile(_ url: URL, language: String?) async throws -> String {
+        let file = try AVAudioFile(forReading: url)
+        let maxFrames = AVAudioFrameCount(file.processingFormat.sampleRate * TranscriptionAudioPolicy.maximumChunkSeconds)
+        guard file.length > AVAudioFramePosition(maxFrames) else {
+            return try await transcribeChunk(url, language: language)
+        }
+        var texts: [String] = []
+        while file.framePosition < file.length {
+            try Task.checkCancellation()
+            let start = file.framePosition
+            let capacity = AVAudioFrameCount(min(AVAudioFramePosition(maxFrames), file.length - start))
+            guard let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: capacity) else {
+                throw QwenServiceWorkerError.audioAllocationFailed
+            }
+            try file.read(into: buffer)
+            guard let channel = buffer.floatChannelData?[0], buffer.frameLength > 0 else {
+                throw QwenServiceWorkerError.audioAllocationFailed
+            }
+            let samples = Array(UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength)))
+            let count = TranscriptionAudioPolicy.chunkFrameCount(
+                samples: samples, sampleRate: file.processingFormat.sampleRate,
+                hasMoreAudio: file.framePosition < file.length
+            )
+            buffer.frameLength = AVAudioFrameCount(count)
+            file.framePosition = start + AVAudioFramePosition(count)
+            let chunkURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent("lemon-asr-chunk-\(UUID().uuidString).wav")
+            defer { try? FileManager.default.removeItem(at: chunkURL) }
+            do {
+                let output = try AVAudioFile(forWriting: chunkURL, settings: buffer.format.settings)
+                try output.write(from: buffer)
+            }
+            texts.append(try await transcribeChunk(chunkURL, language: language))
+        }
+        return texts.filter { !$0.isEmpty }.joined(separator: " ")
+    }
+
+    private func transcribeChunk(_ url: URL, language: String?) async throws -> String {
+        if let qwenModel {
+            let (_, audio) = try loadAudioArray(from: url, sampleRate: 16_000)
+            let output = qwenModel.generate(
+                audio: audio, maxTokens: TranscriptionAudioPolicy.maximumOutputTokens,
+                temperature: 0, language: language, chunkDuration: 60
+            )
+            // Our external chunks never exceed 60 seconds, so this is a per-request check.
+            guard output.generationTokens < TranscriptionAudioPolicy.maximumOutputTokens else {
+                throw QwenServiceWorkerError.outputLimitReached
+            }
+            return output.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        guard let pipeline else { throw QwenServiceWorkerError.modelMissing }
+        return try await pipeline.transcribe(audio: url, language: language)
     }
 
     private func loadPipeline(modelID: String) async throws -> VoxtralPipeline {
@@ -112,7 +179,8 @@ private actor VoxtralWorkerEngine {
         }
         var configuration = VoxtralPipeline.Configuration.default
         configuration.temperature = 0
-        configuration.maxTokens = 500
+        configuration.maxTokens = TranscriptionAudioPolicy.maximumOutputTokens
+        qwenModel = nil
         let pipeline = VoxtralPipeline(model: model, backend: .mlx, configuration: configuration)
         try await pipeline.loadModel { progress, status in
             fputs("Voxtral load [\(Int(progress * 100))%] \(status)\n", stderr)
@@ -164,6 +232,17 @@ private actor VoxtralWorkerEngine {
         let file = try AVAudioFile(forWriting: url, settings: format.settings)
         try file.write(from: buffer)
         return url
+    }
+}
+
+private enum QwenServiceWorkerError: LocalizedError {
+    case modelMissing, audioAllocationFailed, outputLimitReached
+    var errorDescription: String? {
+        switch self {
+        case .modelMissing: return "The requested local model is not downloaded."
+        case .audioAllocationFailed: return "Could not read the audio chunk."
+        case .outputLimitReached: return "The transcription reached its output limit. Try a shorter recording."
+        }
     }
 }
 

@@ -7,6 +7,10 @@ final class LemonWhisperController: ObservableObject {
     @Published var selectedLanguageCode = "en"
     @Published var selectedBackend: TranscriptionBackend = .whisper
     @Published var isPreparingVoxtral = false
+    @Published var qwenDownloaded = QwenModelCatalog.isDownloaded
+    @Published var qwenIsBusy = false
+    @Published var qwenDownloadProgress: Double?
+    @Published var qwenStatus: String?
     @Published var setupState: SetupState = .bootstrapping
     @Published var processMemoryMB: Int = 0
 

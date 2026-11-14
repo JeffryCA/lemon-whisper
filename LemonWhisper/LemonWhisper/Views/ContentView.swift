@@ -34,6 +34,7 @@ struct ContentView: View {
             syncSelectedModelKey()
             controller.refreshAvailableMicrophones()
         }
+        .onChange(of: controller.qwenDownloaded) { _, _ in syncSelectedModelKey() }
         .onChange(of: controller.selectedBackend) { _, _ in syncSelectedModelKey() }
         .onChange(of: controller.selectedWhisperModelID) { _, _ in syncSelectedModelKey() }
         .onChange(of: controller.selectedVoxtralModelID) { _, _ in syncSelectedModelKey() }
@@ -72,7 +73,7 @@ struct ContentView: View {
             )
         }
 
-        let allModels = controller.supportsVoxtral ? (whisper + voxtral) : whisper
+        let allModels = controller.supportsVoxtral ? (whisper + voxtral + (controller.qwenDownloaded ? [controller.qwenModel] : [])) : whisper
         return allModels.sorted(by: { $0.title < $1.title })
     }
 
@@ -98,6 +99,9 @@ struct ContentView: View {
 
     private func currentSelectedDownloadedModelKey() -> String? {
         switch controller.selectedBackend {
+        case .qwen:
+            let key = controller.qwenModel.id
+            return downloadedModels.contains(where: { $0.id == key }) ? key : nil
         case .whisper:
             let key = "\(ModelEngine.whisper.rawValue):\(controller.selectedWhisperModelID)"
             return downloadedModels.contains(where: { $0.id == key }) ? key : nil
@@ -145,6 +149,8 @@ struct ContentView: View {
     private func applyModelSelection(key: String) {
         guard let model = downloadedModels.first(where: { $0.id == key }) else { return }
         switch model.engine {
+        case .qwen:
+            controller.selectQwenAndActivate()
         case .whisper:
             controller.selectDownloadedWhisperModelAndActivate(model.baseID)
         case .voxtral:

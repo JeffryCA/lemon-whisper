@@ -15,6 +15,9 @@
 		64F0B0062E6000010097908D /* VoxtralWorker in Embed Voxtral Worker */ = {isa = PBXBuildFile; fileRef = 64F0B0002E6000010097908D /* VoxtralWorker */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		64F0B0222E6000010097908D /* mlx-swift_Cmlx.bundle in Embed Voxtral Worker */ = {isa = PBXBuildFile; fileRef = 64F0B0202E6000010097908D /* mlx-swift_Cmlx.bundle */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		64F0B0232E6000010097908D /* swift-transformers_Hub.bundle in Embed Voxtral Worker */ = {isa = PBXBuildFile; fileRef = 64F0B0212E6000010097908D /* swift-transformers_Hub.bundle */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		64F0C0112E6000010097908D /* QwenModelCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64F0C0012E6000010097908D /* QwenModelCatalog.swift */; };
+		64F0C0122E6000010097908D /* TranscriptionAudioPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64F0C0022E6000010097908D /* TranscriptionAudioPolicy.swift */; };
+		64F0C0202E6000010097908D /* MLXAudioSTT in Frameworks */ = {isa = PBXBuildFile; productRef = 64F0C0212E6000010097908D /* MLXAudioSTT */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -79,6 +82,8 @@
 		64F0B0022E6000010097908D /* LemonWhisper/WorkerProtocol/VoxtralJSONLines.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LemonWhisper/WorkerProtocol/VoxtralJSONLines.swift; sourceTree = "<group>"; };
 		64F0B0202E6000010097908D /* mlx-swift_Cmlx.bundle */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = "mlx-swift_Cmlx.bundle"; sourceTree = BUILT_PRODUCTS_DIR; };
 		64F0B0212E6000010097908D /* swift-transformers_Hub.bundle */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = "swift-transformers_Hub.bundle"; sourceTree = BUILT_PRODUCTS_DIR; };
+		64F0C0012E6000010097908D /* QwenModelCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LemonWhisper/WorkerProtocol/QwenModelCatalog.swift; sourceTree = "<group>"; };
+		64F0C0022E6000010097908D /* TranscriptionAudioPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LemonWhisper/WorkerProtocol/TranscriptionAudioPolicy.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -145,6 +150,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				64F0B0052E6000010097908D /* VoxtralCore in Frameworks */,
+				64F0C0202E6000010097908D /* MLXAudioSTT in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -178,6 +184,8 @@
 				64F0B0112E6000010097908D /* VoxtralWorker */,
 				64F0B0012E6000010097908D /* LemonWhisper/WorkerProtocol/VoxtralWorkerProtocol.swift */,
 				64F0B0022E6000010097908D /* LemonWhisper/WorkerProtocol/VoxtralJSONLines.swift */,
+				64F0C0022E6000010097908D /* TranscriptionAudioPolicy.swift */,
+				64F0C0012E6000010097908D /* QwenModelCatalog.swift */,
 				643AE2262E33BEC80097908D /* Frameworks */,
 				64B79E032E31F52A00096BEF /* Products */,
 				640B626D2E3455F80079DDA4 /* Recovered References */,
@@ -286,6 +294,7 @@
 			name = VoxtralWorker;
 			packageProductDependencies = (
 				64F0A0022E5000010097908D /* VoxtralCore */,
+				64F0C0212E6000010097908D /* MLXAudioSTT */,
 			);
 			productName = VoxtralWorker;
 			productReference = 64F0B0002E6000010097908D /* VoxtralWorker */;
@@ -328,6 +337,8 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				64F0A0012E5000010097908D /* XCRemoteSwiftPackageReference "mlx-voxtral-swift" */,
+				64F0C0222E6000010097908D /* XCRemoteSwiftPackageReference "mlx-audio-swift" */,
+                64F0C0232E6000010097908D /* XCRemoteSwiftPackageReference "mlx-swift-lm" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 64B79E032E31F52A00096BEF /* Products */;
@@ -394,6 +405,8 @@
 			files = (
 				64F0B0032E6000010097908D /* LemonWhisper/WorkerProtocol/VoxtralWorkerProtocol.swift in Sources */,
 				64F0B0042E6000010097908D /* LemonWhisper/WorkerProtocol/VoxtralJSONLines.swift in Sources */,
+				64F0C0122E6000010097908D /* TranscriptionAudioPolicy.swift in Sources */,
+				64F0C0112E6000010097908D /* QwenModelCatalog.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -550,7 +563,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 8;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = Q9U8224WWM;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -565,7 +578,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.0.1;
+				MARKETING_VERSION = 0.0.8;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jca.LemonWhisper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -584,7 +597,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 8;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = Q9U8224WWM;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -604,7 +617,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.0.1;
+				MARKETING_VERSION = 0.0.8;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jca.LemonWhisper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -776,6 +789,16 @@
 				version = 2.2.0;
 			};
 		};
+		64F0C0222E6000010097908D /* XCRemoteSwiftPackageReference "mlx-audio-swift" */ = {
+            isa = XCRemoteSwiftPackageReference;
+            repositoryURL = "https://github.com/Blaizzy/mlx-audio-swift";
+            requirement = { kind = exactVersion; version = 0.1.4; };
+        };
+        64F0C0232E6000010097908D /* XCRemoteSwiftPackageReference "mlx-swift-lm" */ = {
+            isa = XCRemoteSwiftPackageReference;
+            repositoryURL = "https://github.com/ml-explore/mlx-swift-lm";
+            requirement = { kind = exactVersion; version = 3.31.4; };
+        };
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -784,6 +807,11 @@
 			package = 64F0A0012E5000010097908D /* XCRemoteSwiftPackageReference "mlx-voxtral-swift" */;
 			productName = VoxtralCore;
 		};
+        64F0C0212E6000010097908D /* MLXAudioSTT */ = {
+            isa = XCSwiftPackageProductDependency;
+            package = 64F0C0222E6000010097908D;
+            productName = MLXAudioSTT;
+        };
 /* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 64B79DFA2E31F52A00096BEF /* Project object */;

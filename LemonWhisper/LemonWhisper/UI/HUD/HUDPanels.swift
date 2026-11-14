@@ -11,9 +11,37 @@ struct RecordingIndicatorView: View {
     }
 
     var body: some View {
-        HUDGlassEffectView(cornerRadius: size / 2)
-            .frame(width: size, height: size)
-            .clipShape(Circle())
+        if #available(macOS 26.0, *) {
+            Color.clear
+                .frame(width: size, height: size)
+                .glassEffect(.clear, in: .circle)
+                .overlay { rimHighlight }
+        } else {
+            HUDGlassEffectView(cornerRadius: size / 2)
+                .frame(width: size, height: size)
+                .overlay { rimHighlight }
+        }
+    }
+
+    private var rimHighlight: some View {
+        Circle().strokeBorder(
+            LinearGradient(
+                stops: [
+                    .init(color: .white.opacity(0.65), location: 0),
+                    .init(color: .white.opacity(0.14), location: 0.35),
+                    .init(color: .white.opacity(0.14), location: 0.65),
+                    .init(color: .white.opacity(0.45), location: 1)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            ),
+            lineWidth: 0.75
+        )
+        .overlay {
+            Circle()
+                .inset(by: 0.75)
+                .strokeBorder(.black.opacity(0.12), lineWidth: 0.5)
+        }
     }
 }
 
@@ -128,6 +156,7 @@ final class RecordingPulseHUD {
     private var cursorTracker: CursorTrackingPanelController?
     private var hideWorkItem: DispatchWorkItem?
     private let bubbleSize: CGFloat = 30
+    private let glassPadding: CGFloat = 4
 
     private init() {}
 
@@ -171,27 +200,41 @@ final class RecordingPulseHUD {
     private func ensurePanel() {
         guard panel == nil else { return }
 
-        let panel = makeFloatingHUDPanel(size: CGSize(width: bubbleSize, height: bubbleSize))
-        let indicator = NSHostingView(rootView: RecordingIndicatorView(size: bubbleSize))
-        indicator.frame = NSRect(x: 0, y: 0, width: bubbleSize, height: bubbleSize)
+        let panelSize = bubbleSize + 2 * glassPadding
+        let panel = makeFloatingHUDPanel(size: CGSize(width: panelSize, height: panelSize))
+        let indicator = NSHostingView(
+            rootView: RecordingIndicatorView(size: bubbleSize).padding(glassPadding)
+        )
+        indicator.frame = NSRect(x: 0, y: 0, width: panelSize, height: panelSize)
         panel.contentView = indicator
 
         self.panel = panel
-        self.cursorTracker = CursorTrackingPanelController(panel: panel)
+        self.cursorTracker = CursorTrackingPanelController(panel: panel, verticalOffset: 18 - glassPadding)
     }
 }
 
 #Preview("Recording indicator") {
     ZStack {
         LinearGradient(
-            colors: [Color(nsColor: .windowBackgroundColor), Color.accentColor.opacity(0.18)],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
+            colors: [.indigo, .mint, .orange],
+            startPoint: .leading,
+            endPoint: .trailing
         )
 
-        RecordingIndicatorView()
+        HStack(spacing: 0) {
+            ForEach(0..<12) { index in
+                Rectangle()
+                    .fill(index.isMultiple(of: 2) ? Color.black.opacity(0.55) : .clear)
+                    .frame(width: 20)
+            }
+        }
+
+        HStack(spacing: 28) {
+            RecordingIndicatorView()
+            RecordingIndicatorView(size: 76)
+        }
     }
-    .frame(width: 160, height: 100)
+    .frame(width: 240, height: 120)
 }
 
 @MainActor

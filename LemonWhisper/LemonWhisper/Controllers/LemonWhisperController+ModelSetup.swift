@@ -16,7 +16,18 @@ extension LemonWhisperController {
     }
 
     func setBackend(_ backend: TranscriptionBackend) {
+        guard !isRecording, activeTranscriptionCounts.values.allSatisfy({ $0 == 0 }) else { return }
+        if backend != .qwen {
+            if modelWarmupBackend == .qwen {
+                modelWarmupTask?.cancel()
+                modelWarmupTask = nil
+                modelWarmupBackend = nil
+            }
+            Task { await QwenService.shared.unload() }
+        }
         switch backend {
+        case .qwen:
+            selectQwenAndActivate()
         case .whisper:
             selectedBackend = .whisper
             UserDefaults.standard.set(TranscriptionBackend.whisper.rawValue, forKey: selectedBackendDefaultsKey)
@@ -40,12 +51,15 @@ extension LemonWhisperController {
     }
 
     func selectDownloadedWhisperModelAndActivate(_ id: String) {
+        guard !isRecording, !isPreparingVoxtral,
+              activeTranscriptionCounts.values.allSatisfy({ $0 == 0 }) else { return }
         selectWhisperModel(id)
         setBackend(.whisper)
     }
 
     func selectDownloadedVoxtralModelAndActivate(_ id: String) {
-        guard supportsVoxtral else { return }
+        guard supportsVoxtral, !isRecording, !isPreparingVoxtral,
+              activeTranscriptionCounts.values.allSatisfy({ $0 == 0 }) else { return }
         Task { @MainActor in
             await selectVoxtralModel(id)
             setBackend(.voxtral)
@@ -235,11 +249,11 @@ extension LemonWhisperController {
     }
 
     var hasAnyDownloadedModels: Bool {
-        !downloadedWhisperModels.isEmpty || !downloadedVoxtralModels.isEmpty
+        !downloadedWhisperModels.isEmpty || !downloadedVoxtralModels.isEmpty || qwenDownloaded
     }
 
     var hasAnySupportedDownloadedModels: Bool {
-        !downloadedWhisperModels.isEmpty || (supportsVoxtral && !downloadedVoxtralModels.isEmpty)
+        !downloadedWhisperModels.isEmpty || (supportsVoxtral && (!downloadedVoxtralModels.isEmpty || qwenDownloaded))
     }
 
     /// Whether the selected backend's model is downloaded and on disk. Recording requires this,
@@ -247,6 +261,8 @@ extension LemonWhisperController {
     /// only while an already-downloaded model is loading into memory.
     var hasUsableSelectedModel: Bool {
         switch selectedBackend {
+        case .qwen:
+            return supportsVoxtral && qwenDownloaded
         case .whisper:
             return isWhisperModelDownloaded(selectedWhisperModelID)
         case .voxtral:
@@ -283,7 +299,8 @@ extension LemonWhisperController {
     }
 
     var statusLineText: String {
-        setupStatusLine ?? "Process memory: \(processMemoryMB) MB"
+        if qwenIsBusy || selectedBackend == .qwen, let qwenStatus { return qwenStatus }
+        return setupStatusLine ?? "Process memory: \(processMemoryMB) MB"
     }
 
     private var setupStatusLine: String? {
@@ -327,7 +344,7 @@ extension LemonWhisperController {
         }
 
         if !hasAnySupportedDownloadedModels {
-            selectedBackend = supportsVoxtral && storedBackendPreference() == .voxtral ? .voxtral : .whisper
+            selectedBackend = supportsVoxtral ? storedBackendPreference() : .whisper
             setupState = .awaitingModelSelection(supportsVoxtral: supportsVoxtral)
             whisperStatus = nil
             voxtralStatus = nil
@@ -336,6 +353,10 @@ extension LemonWhisperController {
         }
 
         switch effectiveStoredBackendPreference() {
+        case .qwen:
+            if qwenDownloaded && supportsVoxtral { selectQwenAndActivate(); return }
+            if await activateSelectedVoxtralIfAvailable() { return }
+            if activateSelectedWhisperIfAvailable() { return }
         case .voxtral:
             if await activateSelectedVoxtralIfAvailable() {
                 return
@@ -483,7 +504,7 @@ extension LemonWhisperController {
 
     private func effectiveStoredBackendPreference() -> TranscriptionBackend {
         let stored = storedBackendPreference()
-        if stored == .voxtral && !supportsVoxtral {
+        if (stored == .voxtral || stored == .qwen) && !supportsVoxtral {
             return .whisper
         }
         return stored

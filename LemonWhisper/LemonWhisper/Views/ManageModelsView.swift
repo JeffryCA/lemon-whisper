@@ -27,7 +27,7 @@ struct ManageModelsView: View {
             )
         }
 
-        let allModels = controller.supportsVoxtral ? (whisper + voxtral) : whisper
+        let allModels = controller.supportsVoxtral ? (whisper + voxtral + (controller.qwenDownloaded ? [controller.qwenModel] : [])) : whisper
         return allModels.sorted(by: { $0.title < $1.title })
     }
 
@@ -54,7 +54,7 @@ struct ManageModelsView: View {
             )
         }
 
-        let all = (controller.supportsVoxtral ? (whisper + voxtral) : whisper)
+        let all = (controller.supportsVoxtral ? (whisper + voxtral + [controller.qwenModel]) : whisper)
             .sorted(by: { $0.title < $1.title })
         return all.filter { !isDownloaded($0) }
     }
@@ -108,6 +108,8 @@ struct ManageModelsView: View {
 
     private func isDownloaded(_ model: LocalModelItem) -> Bool {
         switch model.engine {
+        case .qwen:
+            controller.qwenDownloaded
         case .whisper:
             controller.isWhisperModelDownloaded(model.baseID)
         case .voxtral:
@@ -117,6 +119,8 @@ struct ManageModelsView: View {
 
     private func download(_ model: LocalModelItem) {
         switch model.engine {
+        case .qwen:
+            controller.downloadQwenModel()
         case .whisper:
             controller.downloadWhisperModel(model.baseID)
         case .voxtral:
@@ -126,6 +130,8 @@ struct ManageModelsView: View {
 
     private func remove(_ model: LocalModelItem) {
         switch model.engine {
+        case .qwen:
+            controller.removeQwenModel()
         case .whisper:
             controller.removeWhisperModel(model.baseID)
         case .voxtral:
@@ -135,6 +141,8 @@ struct ManageModelsView: View {
 
     private func isBusy(_ model: LocalModelItem) -> Bool {
         switch model.engine {
+        case .qwen:
+            controller.qwenIsBusy
         case .whisper:
             controller.isWhisperBusy(model.baseID)
         case .voxtral:
@@ -144,6 +152,8 @@ struct ManageModelsView: View {
 
     private func downloadProgress(for model: LocalModelItem) -> Double? {
         switch model.engine {
+        case .qwen:
+            controller.qwenDownloadProgress
         case .whisper:
             controller.whisperProgress(model.baseID)
         case .voxtral:

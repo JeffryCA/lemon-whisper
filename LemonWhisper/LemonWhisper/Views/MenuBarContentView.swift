@@ -61,6 +61,14 @@ struct MenuBarContentView: View {
         }
 
         Menu("Model") {
+            if controller.supportsVoxtral && controller.qwenDownloaded {
+                Section("Downloaded Qwen3-ASR") {
+                    Button(controller.selectedBackend == .qwen ? "✓ \(QwenModelCatalog.title)" : QwenModelCatalog.title) {
+                        controller.selectQwenAndActivate()
+                    }
+                    .disabled(controller.qwenIsBusy || controller.isPreparingVoxtral)
+                }
+            }
             if controller.supportsVoxtral {
                 Section("Downloaded Voxtral") {
                     if controller.downloadedVoxtralModels.isEmpty {

@@ -1,6 +1,7 @@
 enum ModelEngine: String {
     case whisper = "Whisper"
     case voxtral = "Voxtral"
+    case qwen = "Qwen3-ASR"
 }
 
 struct LocalModelItem: Identifiable, Hashable {

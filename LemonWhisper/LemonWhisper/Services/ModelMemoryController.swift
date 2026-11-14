@@ -2,7 +2,7 @@ import Foundation
 
 /// Backend-agnostic control over whether a transcription model is resident in memory.
 ///
-/// Both transcription backends already load lazily at transcription time; this protocol lets the
+/// The transcription backends already load lazily at transcription time; this protocol lets the
 /// app proactively warm up (fast mode / parallel-with-recording) or free memory after the selected
 /// lazy idle timeout without the caller needing to know which backend is active.
 protocol ModelMemoryController: Sendable {
@@ -55,4 +55,12 @@ struct VoxtralMemoryController: ModelMemoryController {
     func unload() async {
         await VoxtralService.shared.unload()
     }
+}
+
+struct QwenMemoryController: ModelMemoryController {
+    func isLoaded() async -> Bool { await QwenService.shared.isReady }
+    func warmUp(weightMaterializationBudget: TimeInterval?) async throws {
+        try await QwenService.shared.warmupModel()
+    }
+    func unload() async { await QwenService.shared.unload() }
 }

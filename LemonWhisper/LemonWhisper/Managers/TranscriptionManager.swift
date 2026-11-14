@@ -7,6 +7,7 @@ import ApplicationServices
 enum TranscriptionBackend: String, CaseIterable, Identifiable, Hashable {
     case whisper
     case voxtral
+    case qwen
 
     var id: String { rawValue }
 
@@ -16,6 +17,8 @@ enum TranscriptionBackend: String, CaseIterable, Identifiable, Hashable {
             return "Whisper"
         case .voxtral:
             return "Voxtral"
+        case .qwen:
+            return "Qwen3-ASR"
         }
     }
 }
@@ -61,6 +64,9 @@ class TranscriptionManager {
                     )
                     let result = ok ? await ctx.getTranscription().trimmingCharacters(in: .whitespacesAndNewlines) : "Transcription failed."
                     completion(result)
+                case .qwen:
+                    let text = try await QwenService.shared.transcribe(audioURL: tempURL, language: language)
+                    completion(text.trimmingCharacters(in: .whitespacesAndNewlines))
                 case .voxtral:
                     let text = try await VoxtralService.shared.transcribe(audioURL: tempURL, language: language)
                     completion(text.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -121,6 +127,8 @@ class TranscriptionManager {
                         useVAD: duration >= 1
                     )
                     result = ok ? await ctx.getTranscription().trimmingCharacters(in: .whitespacesAndNewlines) : "Transcription failed."
+                case .qwen:
+                    result = try await QwenService.shared.transcribe(audioURL: url, language: language)
                 case .voxtral:
                     result = try await VoxtralService.shared.transcribe(audioURL: url, language: language)
                 }

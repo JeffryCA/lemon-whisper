@@ -86,15 +86,16 @@ extension LemonWhisperController {
         isRecording = false
         recordingStartedAt = nil
         recordingBackend = nil
-        if backend == .voxtral {
+        if backend == .voxtral || backend == .qwen {
             if modelWarmupBackend == backend {
                 modelWarmupTask?.cancel()
                 modelWarmupTask = nil
                 modelWarmupBackend = nil
             }
             Task { @MainActor [weak self] in
-                await VoxtralService.shared.cancelCurrentWorker()
-                guard let self, self.modelLoadingMode == .fast, self.selectedBackend == .voxtral else {
+                if backend == .qwen { await QwenService.shared.cancel() }
+                else { await VoxtralService.shared.cancelCurrentWorker() }
+                guard let self, self.modelLoadingMode == .fast, self.selectedBackend == backend else {
                     return
                 }
                 self.warmUpCurrentBackendInBackground(weightMaterializationBudget: .infinity)
