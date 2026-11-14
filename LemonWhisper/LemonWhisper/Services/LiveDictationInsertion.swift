@@ -165,6 +165,14 @@ final class LiveDictationInsertion {
     }
 
     func finishLive(_ text: String) async -> TextInsertionResult? {
+        if !span.hasWritten {
+            if !writeWasUnverified { return nil }
+            // A live update may have posted events that the editor ignored.
+            // After the final decode, retry through normal paste if the field
+            // and caret still match the original state.
+            if let state = service.liveFieldState(for: element, processID: processID),
+               span.matches(value: state.value, selection: state.selection) { return nil }
+        }
         guard validate() else { return canUseStandardPaste ? nil : interrupted }
         if span.hasWritten, text.utf16.elementsEqual(insertedText.utf16) {
             return .init(path: usesKeyboard ? .unicodeKeyboard : .accessibility, errorMessage: nil)

@@ -3,6 +3,32 @@ import Testing
 @testable import LemonWhisper
 
 struct LiveDictationRangeTests {
+    @Test func manualEditsRetainAllAudioUntilLiveDictationHasInsertedText() {
+        let start = Date(timeIntervalSince1970: 1_000)
+        let firstEdit = start.addingTimeInterval(5)
+        let secondEdit = start.addingTimeInterval(10)
+        let thirdEdit = start.addingTimeInterval(15)
+        var progress = LiveDictationProgress()
+
+        progress.fieldEdited(transcript: nil, at: 240_000, time: firstEdit, recordingStartedAt: start)
+        #expect(progress.audioStartFrame == 0)
+        #expect(progress.restartedAt == nil)
+        #expect(progress.history.isEmpty)
+
+        progress.fieldEdited(
+            transcript: .init(original: "Full recording", corrected: "Full recording", path: .unicodeKeyboard),
+            at: 480_000, time: secondEdit, recordingStartedAt: start
+        )
+        #expect(progress.audioStartFrame == 480_000)
+        #expect(progress.restartedAt == secondEdit)
+        #expect(progress.history.map(\.startedAt) == [start])
+
+        progress.fieldEdited(transcript: nil, at: 720_000, time: thirdEdit, recordingStartedAt: start)
+        #expect(progress.audioStartFrame == 480_000)
+        #expect(progress.restartedAt == secondEdit)
+        #expect(progress.history.count == 1)
+    }
+
     @Test func appendsThenReplacesOnlyTheDictatedSpan() throws {
         let prefix = "Before 🎙️ "
         let suffix = " after"

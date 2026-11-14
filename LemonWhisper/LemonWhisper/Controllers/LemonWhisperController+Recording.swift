@@ -1,6 +1,23 @@
 import AppKit
 import AVFoundation
 
+struct LiveDictationProgress {
+    private(set) var audioStartFrame = 0
+    private(set) var restartedAt: Date?
+    private(set) var history: [LiveDictationHistorySegment] = []
+
+    @discardableResult
+    mutating func fieldEdited(
+        transcript: LiveDictationInsertion.Transcript?, at frame: Int, time: Date, recordingStartedAt: Date?
+    ) -> Bool {
+        guard let transcript else { return false }
+        history.append(.init(transcript: transcript, startedAt: restartedAt ?? recordingStartedAt, stoppedAt: time))
+        audioStartFrame = frame
+        restartedAt = time
+        return true
+    }
+}
+
 extension LemonWhisperController {
     func toggleRecording() {
         debugLog("🎙️ toggleRecording invoked. isRecording=\(isRecording) canStartNewRecording=\(canStartNewRecording)")
@@ -89,7 +106,7 @@ extension LemonWhisperController {
         let pendingWrite = liveWriteTask
         liveInsertion = nil
         liveWriteTask = nil
-        liveHistorySegments.removeAll()
+        liveProgress = LiveDictationProgress()
         if let insertion {
             Task {
                 _ = await pendingWrite?.value
@@ -185,8 +202,7 @@ extension LemonWhisperController {
             return
         }
         recordingStartedAt = Date()
-        liveAudioStartFrame = 0
-        liveResetAt = nil
+        liveProgress = LiveDictationProgress()
         recordingBackend = backend
         recordingLanguage = selectedLanguageCode
         recordingDictionary = dictionary
@@ -210,16 +226,13 @@ extension LemonWhisperController {
         guard let insertion = liveInsertion,
               insertion.fieldChange == .edited,
               let next = insertion.nextSegment() else { return false }
-        let editedAt = Date()
-        if let transcript = insertion.transcript {
-            liveHistorySegments.append(LiveDictationHistorySegment(
-                transcript: transcript, startedAt: liveResetAt ?? recordingStartedAt, stoppedAt: editedAt
-            ))
-        }
         liveInsertion = next
-        liveAudioStartFrame = recorder.liveFrameCount
-        liveResetAt = editedAt
-        debugLog("Live dictation started a new segment after a manual edit.")
+        if liveProgress.fieldEdited(
+            transcript: insertion.transcript, at: recorder.liveFrameCount,
+            time: Date(), recordingStartedAt: recordingStartedAt
+        ) {
+            debugLog("Live dictation started a new audio segment after a manual edit.")
+        }
         return true
     }
 
@@ -250,7 +263,7 @@ extension LemonWhisperController {
                 guard let insertion = liveInsertion, insertion.fieldChange == .unchanged else { continue }
                 if activeInsertion !== insertion {
                     activeInsertion = insertion
-                    segmentStart = liveAudioStartFrame
+                    segmentStart = liveProgress.audioStartFrame
                     lastFrame = segmentStart
                     completedOriginal.removeAll()
                     completedCorrected.removeAll()
@@ -319,19 +332,19 @@ extension LemonWhisperController {
         recordingStoppedAt: Date,
         backend: TranscriptionBackend
     ) {
-        let startedAt = liveResetAt ?? recordingStartedAt
-        let audioStartFrame = liveAudioStartFrame
+        let startedAt = liveProgress.restartedAt ?? recordingStartedAt
+        let audioStartFrame = liveProgress.audioStartFrame
         let language = recordingLanguage ?? selectedLanguageCode
         let dictionary = recordingDictionary
         let context = recordingContext
         let insertion = liveInsertion
         let pendingWrite = liveWriteTask
-        let historySegments = liveHistorySegments
+        let historySegments = liveProgress.history
         let targetBundleIdentifier = self.targetBundleIdentifier
         let targetProcessID = self.targetProcessID
         liveInsertion = nil
         liveWriteTask = nil
-        liveHistorySegments.removeAll()
+        liveProgress = LiveDictationProgress()
         recordingStartedAt = nil
         recordingLanguage = nil
         recordingDictionary = .init()

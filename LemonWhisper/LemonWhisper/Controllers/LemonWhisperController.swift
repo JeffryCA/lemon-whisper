@@ -45,9 +45,7 @@ final class LemonWhisperController: ObservableObject {
     var recordingContext: String?
     var livePreviewID: UUID?
     var liveWriteTask: Task<Bool, Never>?
-    var liveAudioStartFrame = 0
-    var liveResetAt: Date?
-    var liveHistorySegments: [LiveDictationHistorySegment] = []
+    var liveProgress = LiveDictationProgress()
     var liveInsertion: LiveDictationInsertion?
     var scheduledRecordingStop: DispatchWorkItem?
     var modelWarmupTask: Task<Void, Never>?
