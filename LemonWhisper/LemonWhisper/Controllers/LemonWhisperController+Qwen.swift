@@ -2,9 +2,10 @@ import Foundation
 
 extension LemonWhisperController {
     var qwenModel: LocalModelItem {
+        // Qwen's helper peaked at 3.3–5.1 GB from cold load through 10–60 s of speech on an M1 Max.
         LocalModelItem(
             engine: .qwen, baseID: QwenModelCatalog.modelID, title: QwenModelCatalog.title,
-            downloadSizeLabel: "~1.6 GB", expectedPeakMemoryLabel: "Not measured",
+            downloadSizeLabel: "~1.6 GB", expectedPeakMemoryLabel: "~3–5 GB",
             description: "Recommended for Apple Silicon. Supports multilingual and live transcription."
         )
     }
