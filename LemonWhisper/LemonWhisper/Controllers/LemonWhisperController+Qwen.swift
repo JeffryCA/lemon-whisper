@@ -5,7 +5,7 @@ extension LemonWhisperController {
         LocalModelItem(
             engine: .qwen, baseID: QwenModelCatalog.modelID, title: QwenModelCatalog.title,
             downloadSizeLabel: "~1.6 GB", expectedPeakMemoryLabel: "Not measured",
-            description: "Local multilingual transcription. Apple Silicon required."
+            description: "Recommended for Apple Silicon. Supports multilingual and live transcription."
         )
     }
 
@@ -42,17 +42,24 @@ extension LemonWhisperController {
         qwenDownloadProgress = 0
         qwenStatus = "Downloading Qwen3-ASR…"
         Task { @MainActor in
-            defer { qwenIsBusy = false; qwenDownloadProgress = nil }
             do {
+                defer {
+                    qwenIsBusy = false
+                    qwenDownloadProgress = nil
+                }
                 try await QwenService.shared.download { progress in
                     Task { @MainActor in self.qwenDownloadProgress = progress }
                 }
                 qwenDownloaded = QwenModelCatalog.isDownloaded
-                qwenStatus = "Qwen3-ASR downloaded. Select it in Model to try it."
-                if selectedBackend == .qwen { setupState = .ready }
             } catch {
                 qwenStatus = error.localizedDescription
                 if selectedBackend == .qwen { setupState = .blocked(message: error.localizedDescription) }
+                return
+            }
+            if selectedBackend == .qwen {
+                selectQwenAndActivate()
+            } else {
+                qwenStatus = "Qwen3-ASR downloaded. Select it in Model to use it."
             }
         }
     }

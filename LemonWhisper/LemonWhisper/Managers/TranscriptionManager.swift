@@ -9,6 +9,10 @@ enum TranscriptionBackend: String, CaseIterable, Identifiable, Hashable {
     case voxtral
     case qwen
 
+    static var defaultForCurrentMac: Self {
+        PlatformCapabilities.isAppleSilicon ? .qwen : .whisper
+    }
+
     var id: String { rawValue }
 
     var supportsVocabularyHints: Bool { self == .whisper || self == .qwen }

@@ -44,9 +44,9 @@ enum SetupState: Equatable {
             return nil
         case .awaitingModelSelection(let supportsVoxtral):
             if supportsVoxtral {
-                return "Choose a local model before recording. Lemon Whisper will not download anything until you confirm."
+                return "Download the recommended Qwen3-ASR model, or choose another local model to start recording."
             }
-            return "Voxtral is unavailable on this Mac. Choose a Whisper model before recording. Lemon Whisper will not download anything until you confirm."
+            return "Choose a Whisper model to start recording on this Mac."
         case .preparingSelectedModel:
             return "Your selected model is being prepared. Recording stays disabled until setup finishes."
         case .blocked(let message):

@@ -105,8 +105,11 @@ extension LemonWhisperController {
                     }
                 }
                 whisperStatus = "Downloaded \(option.title)"
+                let isFirstModel = !hasAnySupportedDownloadedModels
                 refreshWhisperDownloads()
-                if selectedBackend == .whisper && selectedWhisperModelID == id {
+                if isFirstModel {
+                    selectDownloadedWhisperModelAndActivate(id)
+                } else if selectedBackend == .whisper && selectedWhisperModelID == id {
                     ensureWhisperReady()
                 } else if selectedWhisperModelID == id {
                     WhisperContext.clearShared()
@@ -344,7 +347,7 @@ extension LemonWhisperController {
         }
 
         if !hasAnySupportedDownloadedModels {
-            selectedBackend = supportsVoxtral ? storedBackendPreference() : .whisper
+            selectedBackend = effectiveStoredBackendPreference()
             setupState = .awaitingModelSelection(supportsVoxtral: supportsVoxtral)
             whisperStatus = nil
             voxtralStatus = nil
@@ -497,7 +500,7 @@ extension LemonWhisperController {
             let rawValue = UserDefaults.standard.string(forKey: selectedBackendDefaultsKey),
             let backend = TranscriptionBackend(rawValue: rawValue)
         else {
-            return .voxtral
+            return .defaultForCurrentMac
         }
         return backend
     }

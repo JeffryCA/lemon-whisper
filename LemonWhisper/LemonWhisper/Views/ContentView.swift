@@ -233,7 +233,7 @@ struct ContentView: View {
                     .frame(width: 220, alignment: .trailing)
                     .disabled(downloadedModels.isEmpty)
                     .onChange(of: selectedModelKey) { _, newValue in
-                        guard !newValue.isEmpty else { return }
+                        guard !newValue.isEmpty, newValue != currentSelectedDownloadedModelKey() else { return }
                         applyModelSelection(key: newValue)
                     }
                 }

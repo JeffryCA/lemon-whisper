@@ -6,6 +6,8 @@ struct MenuBarContentView: View {
     @ObservedObject var navigationState: AppNavigationState
     let windowController: AppWindowController
 
+    @AppStorage(AppSettingsStore.livePreviewEnabledKey) private var livePreview = false
+
     var body: some View {
         Button(controller.recordingButtonTitle) {
             controller.toggleRecording()
@@ -15,6 +17,16 @@ struct MenuBarContentView: View {
             modifiers: controller.recordingShortcuts.first?.swiftUIModifiers ?? RecordingShortcut.default.swiftUIModifiers
         )
         .disabled(!controller.isRecording && !controller.canStartNewRecording)
+
+        if controller.selectedBackend.supportsLivePreview {
+            Button("Live Transcription") {
+                livePreview.toggle()
+            }
+            .badge(livePreview ? Text("✓") : nil)
+            .accessibilityValue(livePreview ? Text("On") : Text("Off"))
+        } else {
+            Text("Live Transcription (Qwen3-ASR only)")
+        }
 
         Divider()
 

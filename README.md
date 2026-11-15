@@ -12,7 +12,7 @@ It lets you record from anywhere, transcribe speech on-device with local models,
 - Start/Stop recording audio with `Ctrl+Y`.
 - Cancel an in-progress recording with a double-tap of `Control`.
 - Transcribes locally with Whisper, Voxtral, or Qwen3-ASR.
-- Downloads and manages models inside the app (Voxtral Mini 3B 4-bit recommended).
+- Downloads and manages models inside the app (Qwen3-ASR 1.7B 4-bit is the default on Apple Silicon).
 - Switches between downloaded models without external scripts.
 - Shows lightweight recording and transcription HUDs near the cursor.
 - Saves recent transcriptions locally and lets you copy, delete or export them.
@@ -40,6 +40,12 @@ Download the latest `.dmg` from [GitHub Releases](https://github.com/JeffryCA/le
 - Microphone access, so the app can record audio
 - Accessibility access, so the app can paste text back into other apps
 
+### 4. Download a model
+
+Open **Manage Local Models** and click **Download** next to **Qwen3-ASR 1.7B (4-bit)** on
+Apple Silicon. It's the default for new installs and becomes ready once downloaded.
+You can choose Whisper or Voxtral instead. On Intel, choose a Whisper model.
+
 ## Development
 
 If you want to work on the app locally:
@@ -52,11 +58,11 @@ open LemonWhisper/LemonWhisper.xcodeproj
 
 Xcode will resolve Swift Package Manager dependencies automatically. Then run the `LemonWhisper` scheme on `My Mac`.
 
-## Trying Qwen3-ASR
+## Using Qwen3-ASR
 
-On Apple Silicon, open **Manage Local Models** and download **Qwen3-ASR 1.7B (4-bit)**.
-Then select it in the model picker or the menu bar's **Model** menu. Downloading it leaves your
-current model selected. Language selection, history, paste, and model idle unloading work with Qwen.
+If you already use another model, download Qwen3-ASR in **Manage Local Models**, then select it
+in the model picker or the menu bar's **Model** menu. Language selection, history, paste, and
+model idle unloading work with Qwen.
 The model runs locally through the same disposable helper architecture as Voxtral; no Python or
 transcription API is required. Its quality and peak memory have not been benchmarked against Voxtral.
 
@@ -82,6 +88,9 @@ Lemon Whisper transcribes the full recording and finalizes only the range it ins
 Editing the field starts a new segment, and the final pass uses audio since that edit.
 Moving the caret or switching fields pauses live edits. With an unsupported or missing
 field, Lemon Whisper uses its standard final paste. Live streaming is off by default.
+With Qwen3-ASR selected, you can also turn **Live Transcription** on or off from the
+Lemon menu bar menu. The menu and Dictation settings share the same preference, which
+applies when you start your next recording.
 
 **Spoken replacements** stores saved values in a separate local file. Add a spoken
 shortcut such as “my email” or “my phone number.” The settings show the saved value and let you

@@ -5,7 +5,7 @@ import Carbon
 final class LemonWhisperController: ObservableObject {
     @Published var isRecording = false
     @Published var selectedLanguageCode = "en"
-    @Published var selectedBackend: TranscriptionBackend = .whisper
+    @Published var selectedBackend = TranscriptionBackend.defaultForCurrentMac
     @Published var isPreparingVoxtral = false
     @Published var qwenDownloaded = QwenModelCatalog.isDownloaded
     @Published var qwenIsBusy = false
@@ -88,7 +88,7 @@ final class LemonWhisperController: ObservableObject {
 
         Task { @MainActor in
             if previewInitialSetup {
-                selectedBackend = supportsVoxtral ? .voxtral : .whisper
+                selectedBackend = .defaultForCurrentMac
                 selectedVoxtralModelID = VoxtralService.defaultModelID
                 voxtralStatus = "Previewing first-run setup."
                 setupState = .awaitingModelSelection(supportsVoxtral: supportsVoxtral)

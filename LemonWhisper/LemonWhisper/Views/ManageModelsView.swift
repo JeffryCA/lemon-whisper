@@ -54,8 +54,9 @@ struct ManageModelsView: View {
             )
         }
 
-        let all = (controller.supportsVoxtral ? (whisper + voxtral + [controller.qwenModel]) : whisper)
-            .sorted(by: { $0.title < $1.title })
+        let alternatives = (controller.supportsVoxtral ? whisper + voxtral : whisper)
+            .sorted { $0.title < $1.title }
+        let all = controller.supportsVoxtral ? [controller.qwenModel] + alternatives : alternatives
         return all.filter { !isDownloaded($0) }
     }
 
