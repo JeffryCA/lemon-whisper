@@ -3,6 +3,22 @@ import Testing
 @testable import LemonWhisper
 
 struct LiveDictationRangeTests {
+    @Test func recognizesAComposerPlaceholderFollowedByAParagraphSeparator() throws {
+        let hint = "Ask Open Research"
+        let emptyCaret = NSRange(location: 0, length: 0)
+        let value = TextInsertionService.editableValue(
+            hint + "\n", placeholder: hint, selection: emptyCaret, bundleIdentifier: nil
+        )
+        var range = try #require(LiveDictationRange(value: value, selection: emptyCaret))
+        let transcript = "A live transcript"
+        range.apply(transcript, to: range.dictatedRange)
+        #expect(range.matches(value: transcript, selection: NSRange(location: transcript.utf16.count, length: 0)))
+        #expect(TextInsertionService.editableValue(
+            hint + "\n", placeholder: hint, selection: NSRange(location: hint.utf16.count, length: 0),
+            bundleIdentifier: nil
+        ) == hint + "\n")
+    }
+
     @Test func manualEditsRetainAllAudioUntilLiveDictationHasInsertedText() {
         let start = Date(timeIntervalSince1970: 1_000)
         let firstEdit = start.addingTimeInterval(5)
@@ -69,11 +85,11 @@ struct LiveDictationRangeTests {
             value: value, prefix: "Before\(first)", selectedText: ""
         ))
 
-        let acceptedEditedSuffix = range.reconcileLineBoundaries(
+        let acceptedEditedSuffix = range.reconcileObservedWrite(
             value: "Before\n\(first)\nEdited\n", selection: selection, insertedText: first
         )
         #expect(!acceptedEditedSuffix)
-        let acceptedInsertion = range.reconcileLineBoundaries(value: value, selection: selection, insertedText: first)
+        let acceptedInsertion = range.reconcileObservedWrite(value: value, selection: selection, insertedText: first)
         #expect(acceptedInsertion)
         #expect(range.dictatedRange == NSRange(location: 7, length: first.utf16.count))
         #expect(LiveDictationRange.alignSelection(
@@ -85,6 +101,30 @@ struct LiveDictationRangeTests {
 
         range.apply("One and two.", to: range.dictatedRange)
         #expect(range.expectedValue == "Before\nOne and two.\nAfter\n")
+    }
+
+    @Test func verifiesSmartQuotesWithinTheDictatedSpan() throws {
+        let prefix = "Sam's note: "
+        let suffix = " Next item"
+        let first = "It's."
+        let revised = "It's working."
+        let selection = NSRange(location: prefix.utf16.count, length: 0)
+        var range = try #require(LiveDictationRange(value: prefix + suffix, selection: selection))
+        range.apply(first, to: selection)
+        let caret = range.expectedSelection
+
+        let editedPrefix = range.reconcileObservedWrite(
+            value: "Sam’s note: It’s." + suffix, selection: caret, insertedText: first
+        )
+        #expect(!editedPrefix)
+        let accepted = range.reconcileObservedWrite(
+            value: prefix + "It’s." + suffix, selection: caret, insertedText: first
+        )
+        #expect(accepted)
+
+        let revision = range.revision(from: first, to: revised)
+        range.apply(revision.text, to: revision.range)
+        #expect(range.matches(value: prefix + "It’s working." + suffix, selection: range.expectedSelection))
     }
 
     @Test func revisesOnlyTheChangedSuffixOfALongDictation() throws {

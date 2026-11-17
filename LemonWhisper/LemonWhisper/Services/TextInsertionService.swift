@@ -43,11 +43,8 @@ final class TextInsertionService {
         let selectedRange: CFRange?
 
         var exposesPlaceholderAsValue: Bool {
-            guard let currentValue,
-                  let placeholderValue else {
-                return false
-            }
-            return currentValue == placeholderValue
+            guard let currentValue else { return false }
+            return TextInsertionService.isPlaceholderValue(currentValue, placeholder: placeholderValue)
         }
 
         var hasSelection: Bool {
@@ -86,19 +83,45 @@ final class TextInsertionService {
               let value = stringValue(for: element),
               let range = selectedTextRange(for: element),
               range.location >= 0, range.length >= 0 else { return nil }
-        let placeholder = stringAttributeValue(kAXPlaceholderValueAttribute as CFString, for: element)
         let rawSelection = NSRange(location: range.location, length: range.length)
         let bundleIdentifier = NSRunningApplication(processIdentifier: processID)?.bundleIdentifier
         let selection = alignedLiveSelection(rawSelection, value: value, in: element) ?? rawSelection
-        let isEmptySelection = selection == NSRange(location: 0, length: 0)
-        // The Codex composer exposes its empty hint as AXValue with no AXPlaceholderValue.
-        let isCodexEmptyHint = bundleIdentifier == "com.openai.codex" && value == "Work with Codex\n"
-        let isEmpty = isEmptySelection && (value == placeholder || isCodexEmptyHint || value == "\n")
+        var placeholder = stringAttributeValue(kAXPlaceholderValueAttribute as CFString, for: element)
+        // Codex can expose an empty composer hint as its accessibility name.
+        if placeholder?.isEmpty != false, bundleIdentifier == "com.openai.codex",
+           selection == NSRange(location: 0, length: 0), value.hasSuffix("\n"),
+           let title = stringAttributeValue(kAXTitleAttribute as CFString, for: element),
+           value == title + "\n",
+           title == stringAttributeValue(kAXDescriptionAttribute as CFString, for: element) {
+            placeholder = title
+        }
         // A caret at a line boundary can share an AX offset with another line.
         // Keyboard events act on the actual caret even where AX offsets are ambiguous.
         let text = value as NSString
         let touchesLineBreak = selection.location < text.length && text.character(at: selection.location) == 0x0A
-        return (isEmpty ? "" : value, selection, selection != rawSelection || touchesLineBreak)
+        return (
+            Self.editableValue(value, placeholder: placeholder, selection: selection, bundleIdentifier: bundleIdentifier),
+            selection,
+            selection != rawSelection || touchesLineBreak
+        )
+    }
+
+    static func editableValue(
+        _ value: String, placeholder: String?, selection: NSRange, bundleIdentifier: String?
+    ) -> String {
+        guard selection == NSRange(location: 0, length: 0) else { return value }
+        // The Codex composer can expose its empty hint with no AXPlaceholderValue.
+        let isCodexEmptyHint = bundleIdentifier == "com.openai.codex" && value == "Work with Codex\n"
+        if isCodexEmptyHint || value == "\n" || isPlaceholderValue(value, placeholder: placeholder) {
+            return ""
+        }
+        return value
+    }
+
+    private static func isPlaceholderValue(_ value: String, placeholder: String?) -> Bool {
+        guard let placeholder else { return false }
+        // Some rich-text editors add a paragraph separator only to AXValue.
+        return value == placeholder || (!placeholder.isEmpty && value == placeholder + "\n")
     }
 
     private func alignedLiveSelection(_ selection: NSRange, value: String, in element: AXUIElement) -> NSRange? {
@@ -155,9 +178,11 @@ final class TextInsertionService {
             return result
         }
 
+        // Paste the whole transcript in one operation. Editors can apply a
+        // burst of synthetic Unicode events out of order.
         let strategies: [(path: TextInsertionPath, attempt: () -> Bool)] = [
-            (.unicodeKeyboard, { self.typeUsingUnicodeEvents(sanitized, target: target) }),
             (.commandV, { copied && self.pasteUsingCommandV(target: target) }),
+            (.unicodeKeyboard, { self.typeUsingUnicodeEvents(sanitized, target: target) }),
             (.accessibility, { self.insertTextViaAccessibility(sanitized, target: target) }),
             (.appleScript, { copied && self.pasteWithAppleScript(target: target) })
         ]

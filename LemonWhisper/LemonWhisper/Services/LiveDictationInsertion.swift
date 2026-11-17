@@ -54,9 +54,8 @@ struct LiveDictationRange {
         return range
     }
 
-    /// Some editors omit blank lines from AXValue until they contain text. Accept
-    /// the insertion at the reported caret if only adjacent newlines changed.
-    mutating func reconcileLineBoundaries(
+    /// Verify editor formatting of the inserted text and adjacent line boundaries.
+    mutating func reconcileObservedWrite(
         value: String, selection: NSRange, insertedText: String
     ) -> Bool {
         let length = insertedText.utf16.count
@@ -65,7 +64,9 @@ struct LiveDictationRange {
             return false
         }
         let range = NSRange(location: selection.location - length, length: length)
-        guard Self.sameText(observed.substring(with: range), insertedText) else { return false }
+        guard observed.substring(with: range).utf16.elementsEqual(insertedText.utf16, by: { lhs, rhs in
+            Self.insertionCodeUnit(lhs) == Self.insertionCodeUnit(rhs)
+        }) else { return false }
 
         let expected = expectedValue as NSString
         let expectedPrefix = expected.substring(to: dictatedRange.location)
@@ -86,6 +87,15 @@ struct LiveDictationRange {
         dictatedRange = range
         expectedSelection = selection
         return true
+    }
+
+    private static func insertionCodeUnit(_ unit: UInt16) -> UInt16 {
+        switch unit {
+        case 0x00A0: return 0x20 // Nonbreaking space
+        case 0x2018, 0x2019: return 0x27 // Smart single quotes and apostrophes
+        case 0x201C, 0x201D: return 0x22 // Smart double quotes
+        default: return unit
+        }
     }
 
     mutating func apply(_ text: String, to range: NSRange) {
@@ -264,7 +274,7 @@ final class LiveDictationInsertion {
             try? await Task.sleep(for: .milliseconds(20))
             guard let current = service.liveFieldState(for: element, processID: processID) else { break }
             if updated.matches(value: current.value, selection: current.selection)
-                || updated.reconcileLineBoundaries(
+                || updated.reconcileObservedWrite(
                     value: current.value, selection: current.selection, insertedText: text
                 ) {
                 usesKeyboard = true
@@ -318,7 +328,7 @@ final class LiveDictationInsertion {
             return false
         }
         guard updated.matchesText(state.value)
-                || updated.reconcileLineBoundaries(
+                || updated.reconcileObservedWrite(
                     value: state.value, selection: state.selection, insertedText: text
                 ) else {
             // Some editors acknowledge AXSelectedText without applying the edit.
