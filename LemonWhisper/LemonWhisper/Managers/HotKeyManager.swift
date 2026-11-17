@@ -22,7 +22,7 @@ private func hotKeyHandler(
 enum HotKeyManager {
     private static var globalFlagsMonitor: Any?
     private static var localFlagsMonitor: Any?
-    private static var lastControlTapDate: Date?
+    private static var lastCancelTap: (modifier: NSEvent.ModifierFlags, timestamp: TimeInterval)?
     private static let doubleTapThreshold: TimeInterval = 0.35
     private static var handlerInstalled = false
 
@@ -106,21 +106,30 @@ enum HotKeyManager {
     }
 
     private static func handleFlagsChanged(_ event: NSEvent) {
-        guard event.keyCode == 59 || event.keyCode == 62 else { return }
+        let modifier: NSEvent.ModifierFlags
+        switch Int(event.keyCode) {
+        case kVK_Control, kVK_RightControl:
+            modifier = .control
+        case kVK_Option, kVK_RightOption:
+            modifier = .option
+        default:
+            return
+        }
 
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        guard flags == .control else { return }
+        guard flags == modifier else { return }
 
-        let now = Date()
-        if let lastControlTapDate, now.timeIntervalSince(lastControlTapDate) <= doubleTapThreshold {
-            self.lastControlTapDate = nil
-            debugLog("⌨️ Double-control detected")
+        if let lastCancelTap, lastCancelTap.modifier == modifier,
+           event.timestamp - lastCancelTap.timestamp <= doubleTapThreshold {
+            self.lastCancelTap = nil
+            let name = modifier == .control ? "control" : "option"
+            debugLog("⌨️ Double-\(name) detected")
             DispatchQueue.main.async {
                 NotificationCenter.default.post(name: .cancelRecordingHotKey, object: nil)
             }
             return
         }
 
-        lastControlTapDate = now
+        lastCancelTap = (modifier, event.timestamp)
     }
 }

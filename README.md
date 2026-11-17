@@ -10,7 +10,7 @@ It lets you record from anywhere, transcribe speech on-device with local models,
 
 - Runs as a menu bar app instead of a full dock app.
 - Start/Stop recording audio with `Ctrl+Y`.
-- Cancel an in-progress recording with a double-tap of `Control`.
+- Cancel an in-progress recording by double-tapping `Control` or `Option`.
 - Transcribes locally with Whisper, Voxtral, or Qwen3-ASR.
 - Downloads and manages models inside the app (Qwen3-ASR 1.7B 4-bit is the default on Apple Silicon).
 - Switches between downloaded models without external scripts.
