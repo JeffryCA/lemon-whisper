@@ -24,4 +24,25 @@ struct TranscriptionDictionaryTests {
         let longContext = try #require(dictionary.context(additional: String(repeating: "あ", count: 200)))
         #expect(longContext.utf8.count <= 512)
     }
+    @Test func removesCopiedVocabularyButKeepsSpokenTerms() {
+        let context = "Project names\nVocabulary: Qwen, Tailscale, wrun"
+        #expect(TranscriptionDictionary.removingVocabularyEcho(
+            from: "Vocabulary: Qwen, Tailscale, wrun.....", context: context
+        ).isEmpty)
+        #expect(TranscriptionDictionary.removingVocabularyEcho(
+            from: "Can you explain Qwen? Qwen, Tailscale, wrun. Vocabulary: Qwen, Tailscale, wrun.....",
+            context: context
+        ) == "Can you explain Qwen?")
+        #expect(TranscriptionDictionary.removingVocabularyEcho(
+            from: "Qwen.", context: "Vocabulary: Qwen"
+        ) == "Qwen.")
+    }
+
+    @Test(arguments: [
+        ("Jeffry.", "Jeffry"), ("Hello world.", "Hello world."),
+        ("Jeffry?", "Jeffry?"), ("Wait...", "Wait..."), ("U.S.", "U.S.")
+    ])
+    func removesOnlySingleWordPeriods(input: String, expected: String) {
+        #expect(TranscriptionDictionary.removingSingleWordPeriod(from: input) == expected)
+    }
 }

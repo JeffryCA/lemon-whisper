@@ -290,7 +290,7 @@ extension LemonWhisperController {
                     guard !resetLiveSegmentIfEdited(), liveInsertion === insertion,
                           insertion.fieldChange == .unchanged else { continue }
                     lastFrame = snapshot.endFrame
-                    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let trimmed = TranscriptionDictionary.removingVocabularyEcho(from: text, context: context)
                     guard !trimmed.isEmpty else {
                         if snapshot.isCompleteSegment { segmentStart = lastFrame }
                         continue
@@ -304,7 +304,8 @@ extension LemonWhisperController {
                     let original = snapshot.isCompleteSegment ? completedOriginal : completedOriginal + [trimmed]
                     let revision = snapshot.isCompleteSegment ? completedCorrected : completedCorrected + [corrected]
                     let write = Task {
-                        await insertion.update(revision.joined(separator: " "), original: original.joined(separator: " "))
+                        let displayed = TranscriptionDictionary.removingSingleWordPeriod(from: revision.joined(separator: " "))
+                        return await insertion.update(displayed, original: original.joined(separator: " "))
                     }
                     liveWriteTask = write
                     let didWrite = await write.value

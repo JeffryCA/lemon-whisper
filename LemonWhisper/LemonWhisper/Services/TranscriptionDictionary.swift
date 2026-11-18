@@ -71,6 +71,30 @@ struct TranscriptionDictionary: Codable, Sendable {
         return output as String
     }
 
+    /// A copy of the supplied list at the end of a result can be prompt echo,
+    /// including when the decoder finds no speech at all.
+    static func removingVocabularyEcho(from text: String, context: String?) -> String {
+        var result = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let hint = context?.split(whereSeparator: \.isNewline).last,
+              hint.hasPrefix("Vocabulary: ") else { return result }
+        let terms = hint.dropFirst("Vocabulary: ".count)
+        let variants = terms.contains(", ") ? [String(hint), String(terms)] : [String(hint)]
+        let alternatives = variants.map(NSRegularExpression.escapedPattern).joined(separator: "|")
+        let pattern = "(?:^|(?<=\\s))(?:\(alternatives))[.!?…]*$"
+        while let echo = result.range(of: pattern, options: [.regularExpression, .caseInsensitive]) {
+            result = result[..<echo.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return result
+    }
+
+    static func removingSingleWordPeriod(from text: String) -> String {
+        guard text.hasSuffix(".") else { return text }
+        let word = text.dropLast()
+        guard word.contains(where: \.isLetter),
+              !word.contains(where: { $0.isWhitespace || $0 == "." }) else { return text }
+        return String(word)
+    }
+
     func context(additional: String) -> String? {
         let budget = 512
         let extra = additional.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -162,9 +162,15 @@ class TranscriptionManager {
                     result = try await VoxtralService.shared.transcribe(audioURL: url, language: language)
                 }
 
-                let sanitized = result.trimmingCharacters(in: .whitespacesAndNewlines)
+                let sanitized = TranscriptionDictionary.removingVocabularyEcho(from: result, context: context)
                 guard !sanitized.isEmpty else {
-                    await liveInsertion?.discardLive()
+                    if let transcript = await liveInsertion?.transcript {
+                        await TranscriptionHistoryStore.shared.recordLiveSegments(
+                            [.init(transcript: transcript, startedAt: recordingStartedAt,
+                                   stoppedAt: recordingStoppedAt ?? Date())],
+                            language: language, backend: backend, targetBundleIdentifier: targetBundleIdentifier
+                        )
+                    }
                     debugLog("⚠️ Transcription produced no text (backend: \(backend.rawValue), file: \(url.lastPathComponent))")
                     return
                 }
@@ -172,7 +178,9 @@ class TranscriptionManager {
                 let savedRecord: TranscriptionRecord?
                 let pasteText: String
                 if sanitized != "Transcription failed." {
-                    pasteText = dictionary.applyingCorrections(to: sanitized)
+                    pasteText = TranscriptionDictionary.removingSingleWordPeriod(
+                        from: dictionary.applyingCorrections(to: sanitized)
+                    )
                     savedRecord = await TranscriptionHistoryStore.shared.record(
                         rawText: sanitized,
                         correctedText: pasteText == sanitized ? nil : pasteText,
