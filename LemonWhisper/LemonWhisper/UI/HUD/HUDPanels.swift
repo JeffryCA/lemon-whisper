@@ -13,33 +13,66 @@ struct RecordingIndicatorView: View {
         if #available(macOS 26.0, *) {
             Color.clear
                 .frame(width: size, height: size)
-                .glassEffect(.clear, in: .circle)
-                .overlay { rimHighlight }
+                .glassEffect(.regular.tint(.white.opacity(0.25)), in: .circle)
+                .overlay {
+                    Circle().inset(by: 0.85)
+                        .strokeBorder(frostHighlights(strength: 0.44), lineWidth: 1.5)
+                        .blur(radius: 0.6)
+                }
+                .overlay {
+                    Circle().inset(by: 0.25)
+                        .strokeBorder(frostHighlights(strength: 0.98), lineWidth: 0.9)
+                }
         } else {
             HUDGlassEffectView(cornerRadius: size / 2)
                 .frame(width: size, height: size)
-                .overlay { rimHighlight }
+                .overlay { fallbackRim }
         }
     }
 
-    private var rimHighlight: some View {
+    private func frostHighlights(strength: Double) -> LinearGradient {
+        LinearGradient(
+            stops: [
+                .init(color: .white.opacity(strength), location: 0),
+                .init(color: .white.opacity(strength * 0.43), location: 0.14),
+                .init(color: .clear, location: 0.41),
+                .init(color: .clear, location: 0.59),
+                .init(color: .white.opacity(strength * 0.47), location: 0.86),
+                .init(color: .white.opacity(strength * 0.94), location: 1)
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+
+    private var fallbackRim: some View {
+        // A dark contour at the sides and an inset reflection give the edge depth.
         Circle().strokeBorder(
-            LinearGradient(
-                stops: [
-                    .init(color: .white.opacity(0.65), location: 0),
-                    .init(color: .white.opacity(0.14), location: 0.35),
-                    .init(color: .white.opacity(0.14), location: 0.65),
-                    .init(color: .white.opacity(0.45), location: 1)
+            AngularGradient(
+                colors: [
+                    .black.opacity(0.32), .clear,
+                    .black.opacity(0.36), .clear,
+                    .black.opacity(0.32)
                 ],
-                startPoint: .top,
-                endPoint: .bottom
+                center: .center
             ),
-            lineWidth: 0.75
+            lineWidth: 0.5
         )
         .overlay {
-            Circle()
-                .inset(by: 0.75)
-                .strokeBorder(.black.opacity(0.12), lineWidth: 0.5)
+            Circle().inset(by: 0.5).strokeBorder(
+                LinearGradient(
+                    stops: [
+                        .init(color: .white.opacity(0.82), location: 0),
+                        .init(color: .white.opacity(0.26), location: 0.17),
+                        .init(color: .white.opacity(0.10), location: 0.45),
+                        .init(color: .white.opacity(0.14), location: 0.72),
+                        .init(color: .white.opacity(0.44), location: 1)
+                    ],
+                    startPoint: UnitPoint(x: 0.36, y: 0),
+                    endPoint: UnitPoint(x: 0.64, y: 1)
+                ),
+                lineWidth: 0.75
+            )
         }
     }
 }
@@ -82,17 +115,6 @@ private func makeFloatingHUDPanel(size: CGSize) -> NSPanel {
     panel.level = .floating
     panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
     return panel
-}
-
-private func makeGlassHUDContainer(size: CGFloat) -> NSVisualEffectView {
-    let container = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: size, height: size))
-    container.material = .hudWindow
-    container.blendingMode = .behindWindow
-    container.state = .active
-    container.wantsLayer = true
-    container.layer?.cornerRadius = size / 2
-    container.layer?.masksToBounds = true
-    return container
 }
 
 @MainActor
