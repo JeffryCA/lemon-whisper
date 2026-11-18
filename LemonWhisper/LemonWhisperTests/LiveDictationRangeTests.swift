@@ -19,6 +19,27 @@ struct LiveDictationRangeTests {
         ) == hint + "\n")
     }
 
+    @Test func revisesTheFirstPreviewInAnEmptyChatGPTAnnotation() throws {
+        let hint = "Add an optional comment…\n"
+        let emptyCaret = NSRange(location: 0, length: 0)
+        let value = TextInsertionService.editableValue(
+            hint, placeholder: nil, selection: emptyCaret, bundleIdentifier: "com.openai.codex"
+        )
+        var span = try #require(LiveDictationRange(value: value, selection: emptyCaret))
+        let preview = "This is."
+        span.apply(preview, to: span.dictatedRange)
+        #expect(span.matches(value: preview, selection: NSRange(location: preview.utf16.count, length: 0)))
+
+        let final = "This is a live transcription test. One of those days."
+        let revision = span.revision(from: preview, to: final)
+        span.apply(revision.text, to: revision.range)
+        #expect(span.matches(value: final, selection: NSRange(location: final.utf16.count, length: 0)))
+
+        #expect(TextInsertionService.editableValue(
+            hint, placeholder: nil, selection: emptyCaret, bundleIdentifier: "com.example.editor"
+        ) == hint)
+    }
+
     @Test func manualEditsRetainAllAudioUntilLiveDictationHasInsertedText() {
         let start = Date(timeIntervalSince1970: 1_000)
         let firstEdit = start.addingTimeInterval(5)

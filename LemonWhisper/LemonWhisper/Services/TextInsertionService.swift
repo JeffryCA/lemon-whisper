@@ -110,8 +110,9 @@ final class TextInsertionService {
         _ value: String, placeholder: String?, selection: NSRange, bundleIdentifier: String?
     ) -> String {
         guard selection == NSRange(location: 0, length: 0) else { return value }
-        // The Codex composer can expose its empty hint with no AXPlaceholderValue.
-        let isCodexEmptyHint = bundleIdentifier == "com.openai.codex" && value == "Work with Codex\n"
+        // The ChatGPT composer and inline annotation can expose their empty hints as AXValue.
+        let isCodexEmptyHint = bundleIdentifier == "com.openai.codex"
+            && (value == "Work with Codex\n" || value == "Add an optional comment…\n")
         if isCodexEmptyHint || value == "\n" || isPlaceholderValue(value, placeholder: placeholder) {
             return ""
         }
