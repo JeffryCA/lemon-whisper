@@ -1,4 +1,5 @@
 import AppKit
+import CoreImage.CIFilterBuiltins
 import SwiftUI
 
 /// The glass bubble shared by the recording and transcription states.
@@ -247,9 +248,16 @@ final class RecordingHUD {
             frame: NSRect(x: spinnerInset, y: spinnerInset, width: spinnerSize, height: spinnerSize)
         )
         spinner.style = .spinning
+        spinner.appearance = NSAppearance(named: .darkAqua)
         spinner.controlSize = .small
         spinner.isIndeterminate = true
         spinner.isDisplayedWhenStopped = false
+
+        // AppKit's brightest white spoke is only about one-quarter opaque.
+        let opacity = CIFilter.colorMatrix()
+        opacity.aVector = CIVector(x: 0, y: 0, z: 0, w: 4)
+        spinner.wantsLayer = true
+        spinner.contentFilters = [opacity]
         container.addSubview(spinner)
 
         panel.contentView = container
