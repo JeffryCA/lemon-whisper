@@ -36,6 +36,32 @@ struct TranscriptionDictionaryTests {
         #expect(TranscriptionDictionary.removingVocabularyEcho(
             from: "Qwen.", context: "Vocabulary: Qwen"
         ) == "Qwen.")
+        #expect(TranscriptionDictionary.removingVocabularyEcho(
+            from: "Vocabulary: Qwen Vocabulary: Qwen.", context: "Vocabulary: Qwen"
+        ).isEmpty)
+    }
+
+    @Test func removesRepeatedLabeledVocabularyBetweenSpokenPhrases() {
+        let list = "Vocabulary: ElevenLabs, Tailscale, Greptile, Voxtral, Qwen, Feuerwehrmann Sam"
+        let spokenStart = "Why do we have so little data about the moral decisions?"
+        let spokenEnd = "Or what is the problem here?"
+        #expect(TranscriptionDictionary.removingVocabularyEcho(
+            from: "\(spokenStart) \(list). \(list). \(list). \(spokenEnd)", context: "Project names\n\(list)"
+        ) == "\(spokenStart) \(spokenEnd)")
+        #expect(TranscriptionDictionary.removingVocabularyEcho(
+            from: "\(list.uppercased())\n\(spokenStart)", context: list
+        ) == spokenStart)
+    }
+
+    @Test func keepsSpokenListsAndVocabularyPhrasesWithinTranscripts() {
+        let list = "Vocabulary: Qwen, Tailscale, wrun"
+        let spoken = "I said Qwen, Tailscale, wrun. Vocabulary: Qwen, Tailscale, and wrun are project terms."
+        #expect(TranscriptionDictionary.removingVocabularyEcho(from: spoken, context: list) == spoken)
+        #expect(TranscriptionDictionary.removingVocabularyEcho(from: list, context: nil) == list)
+        let singleTerm = "Vocabulary: Qwen is the first term."
+        #expect(TranscriptionDictionary.removingVocabularyEcho(
+            from: singleTerm, context: "Vocabulary: Qwen"
+        ) == singleTerm)
     }
 
     @Test(arguments: [

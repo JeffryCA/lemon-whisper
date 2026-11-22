@@ -71,16 +71,24 @@ struct TranscriptionDictionary: Codable, Sendable {
         return output as String
     }
 
-    /// A copy of the supplied list at the end of a result can be prompt echo,
-    /// including when the decoder finds no speech at all.
+    /// Decoders can copy the labeled vocabulary between spoken phrases or at the end.
     static func removingVocabularyEcho(from text: String, context: String?) -> String {
         var result = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let hint = context?.split(whereSeparator: \.isNewline).last,
               hint.hasPrefix("Vocabulary: ") else { return result }
         let terms = hint.dropFirst("Vocabulary: ".count)
-        let variants = terms.contains(", ") ? [String(hint), String(terms)] : [String(hint)]
-        let alternatives = variants.map(NSRegularExpression.escapedPattern).joined(separator: "|")
-        let pattern = "(?:^|(?<=\\s))(?:\(alternatives))[.!?…]*$"
+        let hasMultipleTerms = terms.contains(", ")
+        let labeledList = NSRegularExpression.escapedPattern(for: String(hint))
+        // A single term can be part of a spoken sentence after the word "vocabulary".
+        let singleTermBoundary = hasMultipleTerms ? "" : #"(?=[.!?…]|[^\S\r\n]*(?:\r|\n|$))"#
+        result = result.replacingOccurrences(
+            of: "(?<!\\S)\(labeledList)\(singleTermBoundary)[.!?…]*(?=\\s|$)\\s*", with: "",
+            options: [.regularExpression, .caseInsensitive]
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // At the end, also accept an unlabeled multi-term list or repeated single-term hints.
+        let trailingList = hasMultipleTerms ? NSRegularExpression.escapedPattern(for: String(terms)) : labeledList
+        let pattern = "(?<!\\S)\(trailingList)[.!?…]*$"
         while let echo = result.range(of: pattern, options: [.regularExpression, .caseInsensitive]) {
             result = result[..<echo.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
         }
