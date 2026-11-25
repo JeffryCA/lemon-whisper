@@ -8,6 +8,12 @@ struct MenuBarContentView: View {
 
     @AppStorage(AppSettingsStore.livePreviewEnabledKey) private var livePreview = false
 
+    private var openLemonTitle: String {
+        guard let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+              !version.isEmpty else { return "Open Lemon" }
+        return "Open Lemon (\(version))"
+    }
+
     var body: some View {
         Button(controller.recordingButtonTitle) {
             controller.toggleRecording()
@@ -173,7 +179,7 @@ struct MenuBarContentView: View {
         Text("Process memory: \(controller.processMemoryMB) MB")
             .font(.caption2)
 
-        Button("Open Lemon") {
+        Button(openLemonTitle) {
             navigationState.goHome()
             windowController.show(
                 controller: controller,

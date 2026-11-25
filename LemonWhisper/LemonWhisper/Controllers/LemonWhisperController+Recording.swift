@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import AVFoundation
 
 struct LiveDictationProgress {
@@ -181,12 +182,9 @@ extension LemonWhisperController {
         capturePasteTargetApp()
 
         let backend = selectedBackend
-        let wantsPreview = backend.supportsLivePreview && AppSettingsStore.livePreviewEnabled
+        let previewTarget = backend.supportsLivePreview && AppSettingsStore.livePreviewEnabled
             && activeTranscriptionCounts[backend, default: 0] == 0
-        let insertion = wantsPreview ? TranscriptionManager.shared.beginLiveDictation(processID: targetProcessID) : nil
-        if wantsPreview && insertion == nil {
-            debugLog("Live dictation unavailable for the focused field. Using final paste.")
-        }
+            && AXIsProcessTrusted() ? targetProcessID : nil
         let dictionary: TranscriptionDictionary
         do {
             dictionary = try TranscriptionDictionary.load()
@@ -197,7 +195,7 @@ extension LemonWhisperController {
         let context = backend.supportsVocabularyHints && AppSettingsStore.vocabularyHintsEnabled
             ? dictionary.context(additional: AppSettingsStore.transcriptionContext) : nil
 
-        guard recorder.startRecording(livePreview: insertion != nil) else {
+        guard recorder.startRecording(livePreview: previewTarget != nil) else {
             debugLog("❌ Recording failed to start")
             return
         }
@@ -211,9 +209,10 @@ extension LemonWhisperController {
         isRecording = true
         onRecordingDidStart()
 
-        if let insertion, recorder.isCapturingLivePreview {
-            liveInsertion = insertion
-            startLivePreview(language: selectedLanguageCode, dictionary: dictionary, context: context)
+        if let previewTarget, recorder.isCapturingLivePreview {
+            startLivePreview(
+                processID: previewTarget, language: selectedLanguageCode, dictionary: dictionary, context: context
+            )
         }
     }
 
@@ -237,10 +236,13 @@ extension LemonWhisperController {
     }
 
     private func startLivePreview(
-        language: String, dictionary: TranscriptionDictionary, context: String?
+        processID: pid_t, language: String, dictionary: TranscriptionDictionary, context: String?
     ) {
         let id = UUID()
         livePreviewID = id
+        liveInsertion = TranscriptionManager.shared.beginLiveDictation(processID: processID)
+        let clock = ContinuousClock()
+        let fieldDeadline = clock.now + .seconds(2)
         // Observe edits even when an inference request is still running.
         Task { @MainActor [weak self] in
             while self?.livePreviewID == id {
@@ -259,6 +261,18 @@ extension LemonWhisperController {
             while livePreviewID == id {
                 try? await Task.sleep(for: .milliseconds(200))
                 guard livePreviewID == id else { return }
+                if liveInsertion == nil {
+                    // A web editor can expose its focused field after recording starts.
+                    guard clock.now < fieldDeadline,
+                          NSWorkspace.shared.frontmostApplication?.processIdentifier == processID else {
+                        debugLog("Live dictation unavailable for the focused field. Using final paste.")
+                        stopLivePreview()
+                        return
+                    }
+                    liveInsertion = TranscriptionManager.shared.beginLiveDictation(processID: processID)
+                    guard liveInsertion != nil else { continue }
+                    debugLog("Live dictation attached to the focused field after recording started.")
+                }
                 _ = resetLiveSegmentIfEdited()
                 guard let insertion = liveInsertion, insertion.fieldChange == .unchanged else { continue }
                 if activeInsertion !== insertion {
